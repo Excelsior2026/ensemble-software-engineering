@@ -1,0 +1,32 @@
+name: Ensemble Software Engineering (ESE)
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  ese_pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ESE (example)
+        run: |
+          echo "Install dependencies here"
+
+      - name: Run ESE pipeline
+        run: |
+          echo "Run the ESE CLI here"
+
+      - name: Upload ESE artifacts (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ese-artifacts
+          path: artifacts/
