@@ -39,8 +39,10 @@ jobs:
             api_key_env: OPENAI_API_KEY
           roles:
             architect: {}
-            implementer: {}
-            adversarial_reviewer: {}
+            implementer:
+              model: gpt-5-mini
+            adversarial_reviewer:
+              model: gpt-5-nano
             security_auditor: {}
             test_generator: {}
             performance_analyst: {}
