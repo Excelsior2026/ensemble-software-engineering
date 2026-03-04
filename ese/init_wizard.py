@@ -353,12 +353,16 @@ def _select_runtime_adapter(provider: str, *, advanced: bool) -> str:
     adapter_choices = ["dry-run"]
     if provider == "openai":
         adapter_choices.append("openai")
+    if provider == "custom_api":
+        adapter_choices.append("custom_api")
     if advanced:
         adapter_choices.append("custom module:function")
 
     default_adapter = "dry-run"
     if provider == "openai" and os.getenv(_default_api_key_env(provider)):
         default_adapter = "openai"
+    if provider == "custom_api" and os.getenv(_default_api_key_env(provider)):
+        default_adapter = "custom_api"
 
     adapter_choice = questionary.select(
         "Runtime adapter:",
@@ -473,12 +477,13 @@ def run_wizard(config_path: str = "ese.config.yaml", *, advanced: bool = False) 
         if provider == "custom_api":
             provider_name = questionary.text(
                 "Custom provider name (e.g., my-gateway):",
+                validate=lambda value: bool((value or "").strip()) or "Provider name is required.",
             ).ask()
             custom_base_url = questionary.text(
-                "Custom API base URL (optional):",
+                "Custom API base URL (required, e.g., https://gateway.example/v1):",
+                validate=lambda value: bool((value or "").strip()) or "Base URL is required.",
             ).ask()
-            if custom_base_url:
-                provider_cfg["base_url"] = custom_base_url
+            provider_cfg["base_url"] = custom_base_url.strip()
 
         goal_profile = None
         selected_roles: list[str]
@@ -548,6 +553,10 @@ def run_wizard(config_path: str = "ese.config.yaml", *, advanced: bool = False) 
         if runtime_adapter == "openai":
             cfg["runtime"]["openai"] = {
                 "base_url": provider_cfg.get("base_url", "https://api.openai.com/v1"),
+            }
+        if runtime_adapter == "custom_api":
+            cfg["runtime"]["custom_api"] = {
+                "base_url": provider_cfg.get("base_url"),
             }
 
         if mode == "ensemble":

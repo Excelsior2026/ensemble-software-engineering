@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 CONFIG_VERSION = 1
 
@@ -21,10 +21,21 @@ class ProviderConfig(BaseModel):
     name: str
     model: str
     api_key_env: str | None = None
+    base_url: str | None = None
 
     @field_validator("name", "model")
     @classmethod
     def _must_be_non_empty(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must be a non-empty string")
+        return cleaned
+
+    @field_validator("api_key_env", "base_url")
+    @classmethod
+    def _optional_non_empty(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("must be a non-empty string")
@@ -97,6 +108,22 @@ class OpenAIRuntimeConfig(BaseModel):
         return cleaned
 
 
+class CustomAPIRuntimeConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    base_url: str | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must be a non-empty string")
+        return cleaned
+
+
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -106,6 +133,7 @@ class RuntimeConfig(BaseModel):
     retry_backoff_seconds: float = 1.0
     max_output_tokens: int | None = None
     openai: OpenAIRuntimeConfig = Field(default_factory=OpenAIRuntimeConfig)
+    custom_api: CustomAPIRuntimeConfig | None = None
 
     @field_validator("adapter")
     @classmethod
@@ -167,6 +195,26 @@ class ESEConfig(BaseModel):
         if cleaned not in {"ensemble", "solo"}:
             raise ValueError("must be either 'ensemble' or 'solo'")
         return cleaned
+
+    @model_validator(mode="after")
+    def _validate_adapter_contract(self) -> "ESEConfig":
+        adapter = self.runtime.adapter.strip().lower()
+        if adapter != "custom_api":
+            return self
+
+        provider_name = self.provider.name.strip().lower()
+        if provider_name == "openai":
+            raise ValueError("runtime.adapter=custom_api requires provider.name to be a custom provider")
+        if not self.provider.api_key_env:
+            raise ValueError("runtime.adapter=custom_api requires provider.api_key_env")
+
+        provider_base_url = self.provider.base_url
+        runtime_base_url = self.runtime.custom_api.base_url if self.runtime.custom_api else None
+        if not provider_base_url and not runtime_base_url:
+            raise ValueError(
+                "runtime.adapter=custom_api requires provider.base_url or runtime.custom_api.base_url",
+            )
+        return self
 
 
 def _raise_validation_error(source: str, err: ValidationError) -> None:

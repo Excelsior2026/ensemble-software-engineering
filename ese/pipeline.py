@@ -129,7 +129,7 @@ def _role_context(role: str, outputs: Mapping[str, str]) -> Dict[str, str]:
 def _load_custom_adapter(reference: str) -> RoleAdapter:
     if ":" not in reference:
         raise PipelineError(
-            "runtime.adapter must be one of {'dry-run', 'openai'} or a Python reference in 'module:function' format",
+            "runtime.adapter must be one of {'dry-run', 'openai', 'custom_api'} or a Python reference in 'module:function' format",
         )
 
     module_name, object_name = reference.split(":", 1)

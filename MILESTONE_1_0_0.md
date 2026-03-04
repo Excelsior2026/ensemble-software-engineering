@@ -15,32 +15,32 @@ This document defines what must be true before releasing `ese-cli` version `1.0.
 
 All items must be complete:
 
-- [ ] Real adapter support shipped and documented.
-  - [ ] Built-in provider adapter implemented (`openai`).
-  - [ ] `custom_api` runtime path validated (custom provider/base URL/model).
-  - [ ] Adapter error handling covers retries, timeouts, and actionable messages.
-- [ ] Pipeline chaining behavior is complete.
-  - [ ] Architect output is passed to Implementer.
-  - [ ] Implementer output is passed to reviewer/auditor/test/perf roles.
-  - [ ] Artifacts + machine state include enough context for deterministic audit.
-- [ ] Config contract is frozen.
-  - [ ] Schema validation enforced for `load_config`.
-  - [ ] `version` behavior documented and tested.
-  - [ ] Migration strategy defined for future breaking config changes.
-- [ ] Test suite provides release confidence.
-  - [ ] Unit tests for config, doctor, and role resolution.
-  - [ ] Pipeline tests for role order/chaining/artifacts.
-  - [ ] CLI smoke tests for `init`, `roles`, `doctor`, and `run`.
-- [ ] CI enforces quality in pull requests.
-  - [ ] Lint + tests run in CI.
-  - [ ] `ese doctor` and `ese run` run in CI with reproducible config.
-  - [ ] Artifacts are uploaded for failed/successful debugging.
-- [ ] Documentation and examples are complete.
-  - [ ] Role catalog and role selection behavior documented.
-  - [ ] Provider/model presets + `custom_api` setup documented.
-  - [ ] Troubleshooting section for auth/config/adapter failures.
+- [x] Real adapter support shipped and documented.
+  - [x] Built-in provider adapter implemented (`openai`).
+  - [x] `custom_api` runtime path validated (custom provider/base URL/model).
+  - [x] Adapter error handling covers retries, timeouts, and actionable messages.
+- [x] Pipeline chaining behavior is complete.
+  - [x] Architect output is passed to Implementer.
+  - [x] Implementer output is passed to reviewer/auditor/test/perf roles.
+  - [x] Artifacts + machine state include enough context for deterministic audit.
+- [x] Config contract is frozen.
+  - [x] Schema validation enforced for `load_config`.
+  - [x] `version` behavior documented and tested.
+  - [x] Migration strategy defined for future breaking config changes.
+- [x] Test suite provides release confidence.
+  - [x] Unit tests for config, doctor, and role resolution.
+  - [x] Pipeline tests for role order/chaining/artifacts.
+  - [x] CLI smoke tests for `init`, `roles`, `doctor`, and `run`.
+- [x] CI enforces quality in pull requests.
+  - [x] Lint + tests run in CI.
+  - [x] `ese doctor` and `ese run` run in CI with reproducible config.
+  - [x] Artifacts are uploaded for failed/successful debugging.
+- [x] Documentation and examples are complete.
+  - [x] Role catalog and role selection behavior documented.
+  - [x] Provider/model presets + `custom_api` setup documented.
+  - [x] Troubleshooting section for auth/config/adapter failures.
 - [ ] Release process is repeatable.
-  - [ ] Version bump + changelog process documented.
+  - [x] Version bump + changelog process documented.
   - [ ] GitHub release -> PyPI publish flow validated end to end.
 
 ## PR plan (mapped work)
