@@ -17,15 +17,44 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ESE (example)
+      - name: Install ESE
         run: |
-          echo "Install dependencies here"
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Create ESE config
+        run: |
+          cat > ese.config.yaml <<'YAML'
+          version: 1
+          mode: ensemble
+          provider:
+            name: openai
+            model: gpt-5
+            api_key_env: OPENAI_API_KEY
+          roles:
+            architect: {}
+            implementer: {}
+            adversarial_reviewer: {}
+            security_auditor: {}
+            test_generator: {}
+            performance_analyst: {}
+          constraints:
+            disallow_same_model_pairs:
+              - [architect, implementer]
+              - [implementer, adversarial_reviewer]
+              - [implementer, security_auditor]
+          runtime:
+            adapter: dry-run
+          YAML
+
+      - name: Validate config
+        run: ese doctor --config ese.config.yaml
 
       - name: Run ESE pipeline
-        run: |
-          echo "Run the ESE CLI here"
+        run: ese run --config ese.config.yaml --artifacts-dir artifacts
 
       - name: Upload ESE artifacts (optional)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ese-artifacts
