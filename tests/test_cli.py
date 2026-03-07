@@ -121,3 +121,49 @@ def test_start_command_accepts_scope_override(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert (artifacts_dir / "ese_summary.md").exists()
+
+
+def test_task_command_runs_template_without_hand_written_config(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+
+    result = runner.invoke(
+        app,
+        [
+            "task",
+            "Prepare a safer release workflow",
+            "--template",
+            "release-readiness",
+            "--artifacts-dir",
+            str(artifacts_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (artifacts_dir / "ese_summary.md").exists()
+    assert "Task run completed" in result.stdout
+
+
+def test_status_and_report_commands_summarize_artifacts(tmp_path: Path) -> None:
+    cfg = _base_cfg()
+    config_path = _write_cfg(tmp_path / "ese.config.yaml", cfg)
+    artifacts_dir = tmp_path / "artifacts"
+
+    start_result = runner.invoke(
+        app,
+        ["start", "--config", config_path, "--artifacts-dir", str(artifacts_dir)],
+    )
+    assert start_result.exit_code == 0
+
+    status_result = runner.invoke(
+        app,
+        ["status", "--artifacts-dir", str(artifacts_dir)],
+    )
+    report_result = runner.invoke(
+        app,
+        ["report", "--artifacts-dir", str(artifacts_dir)],
+    )
+
+    assert status_result.exit_code == 0
+    assert "Status: completed" in status_result.stdout
+    assert report_result.exit_code == 0
+    assert "Roles:" in report_result.stdout

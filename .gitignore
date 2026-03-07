@@ -12,3 +12,4 @@ venv/
 # Local build outputs
 build/
 dist/
+artifacts/

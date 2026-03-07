@@ -3,6 +3,7 @@
 After `ese start`, ESE writes:
 - `ese_summary.md` (human-readable summary)
 - `pipeline_state.json` (machine-readable execution contract)
+- `ese_config.snapshot.yaml` (normalized config used for the run)
 
 ## Deterministic role ordering
 
@@ -50,6 +51,7 @@ Role context is explicit and stable:
   "provider": "openai",
   "adapter": "dry-run",
   "scope": "...",
+  "config_snapshot": "artifacts/ese_config.snapshot.yaml",
   "role_models": {
     "architect": "openai:gpt-5",
     "implementer": "openai:gpt-5-mini"

@@ -37,12 +37,14 @@ def test_pipeline_writes_expected_artifacts_and_state(tmp_path: Path) -> None:
     summary_path = run_pipeline(_cfg(), artifacts_dir=str(artifacts_dir))
 
     assert summary_path == str(artifacts_dir / "ese_summary.md")
+    assert (artifacts_dir / "ese_config.snapshot.yaml").exists()
     assert (artifacts_dir / "01_architect.json").exists()
     assert (artifacts_dir / "02_implementer.json").exists()
     assert (artifacts_dir / "03_adversarial_reviewer.json").exists()
 
     state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
     assert state["status"] == "completed"
+    assert state["config_snapshot"] == str(artifacts_dir / "ese_config.snapshot.yaml")
     executed_roles = [item["role"] for item in state["execution"]]
     assert executed_roles == ["architect", "implementer", "adversarial_reviewer"]
 
@@ -125,6 +127,37 @@ def test_pipeline_blocks_on_high_severity_findings(tmp_path: Path, monkeypatch: 
     state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
     assert state["status"] == "failed"
     assert "Release blocker" in state["failure"]
+
+
+def test_pipeline_can_rerun_from_a_specific_role(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = _cfg()
+    artifacts_dir = tmp_path / "artifacts"
+    calls: list[str] = []
+
+    def _tracking_adapter(**kwargs) -> str:  # noqa: ANN003
+        role = kwargs["role"]
+        calls.append(role)
+        return json.dumps(
+            {
+                "summary": f"{role} finished.",
+                "findings": [],
+                "artifacts": [],
+                "next_steps": [],
+            },
+        )
+
+    monkeypatch.setattr("ese.pipeline._resolve_adapter", lambda cfg: ("tracking", _tracking_adapter))
+
+    run_pipeline(cfg, artifacts_dir=str(artifacts_dir))
+    assert calls == ["architect", "implementer", "adversarial_reviewer"]
+
+    calls.clear()
+    run_pipeline(cfg, artifacts_dir=str(artifacts_dir), start_role="implementer")
+
+    assert calls == ["implementer", "adversarial_reviewer"]
+    state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
+    executed_roles = [item["role"] for item in state["execution"]]
+    assert executed_roles == ["architect", "implementer", "adversarial_reviewer"]
 
 
 def test_pipeline_rejects_non_json_output_when_enforced(

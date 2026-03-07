@@ -26,6 +26,16 @@ pip install ese-cli
 
 ## Production quickstart
 
+For the fastest path, you can now start from a task description instead of writing config first:
+
+```bash
+ese task "Prepare a staged rollout plan for the new billing flow"
+```
+
+Use `ese templates` to inspect the built-in task templates.
+
+If you want an explicit saved config, use the original wizard path:
+
 1. Generate a config:
 
 ```bash
@@ -55,6 +65,7 @@ Pass `--artifacts-dir ...` only when you want to override `output.artifacts_dir`
 4. Review outputs:
 - `artifacts/ese_summary.md`
 - `artifacts/pipeline_state.json`
+- `artifacts/ese_config.snapshot.yaml`
 - per-role reports in `artifacts/*.json` when `output.enforce_json: true` (default)
 
 `ese run` remains available as a backward-compatible alias for `ese start`.
@@ -63,6 +74,39 @@ For ad hoc runs, you can override the saved scope:
 
 ```bash
 ese start --config ese.config.yaml --scope "Review the release checklist for hidden rollback risks"
+```
+
+## Task-First CLI
+
+Opinionated templates:
+
+```bash
+ese templates
+```
+
+Task-first execution without hand-authoring config:
+
+```bash
+ese task "Prepare a safer release workflow" --template release-readiness
+```
+
+Status and aggregated reporting for an artifacts directory:
+
+```bash
+ese status --artifacts-dir artifacts
+ese report --artifacts-dir artifacts
+```
+
+Rerun from a specific role while reusing upstream artifacts:
+
+```bash
+ese rerun implementer --artifacts-dir artifacts
+```
+
+Launch the local dashboard:
+
+```bash
+ese dashboard --artifacts-dir artifacts
 ```
 
 ## Role catalog
