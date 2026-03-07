@@ -24,6 +24,29 @@ flowchart TD
 pip install ese-cli
 ```
 
+## One-Command Local Start
+
+There is now a local GUI: the ESE dashboard.
+
+From the repo root, the simplest way to start everything is:
+
+```bash
+./start_ese.sh
+```
+
+That script will:
+- create `.venv` if needed,
+- install/update the package in the virtualenv,
+- start the local dashboard GUI.
+
+Other common launcher modes:
+
+```bash
+./start_ese.sh task "Prepare a staged rollout plan for billing"
+./start_ese.sh pr --base origin/main --head HEAD
+./start_ese.sh cli report --artifacts-dir artifacts
+```
+
 ## Production quickstart
 
 For the fastest path, you can now start from a task description instead of writing config first:
