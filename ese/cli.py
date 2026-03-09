@@ -25,6 +25,32 @@ from ese.templates import (
 app = typer.Typer(help="Ensemble Software Engineering (ESE) CLI")
 
 
+def _launch_dashboard(
+    *,
+    artifacts_dir: str = "artifacts",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    config: str | None = None,
+    open_browser: bool = True,
+) -> None:
+    url = f"http://{host}:{port}"
+    typer.echo(f"Serving ESE dashboard at {url} (Ctrl-C to stop)")
+    serve_dashboard(
+        artifacts_dir=artifacts_dir,
+        host=host,
+        port=port,
+        open_browser=open_browser,
+        config_path=config,
+    )
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Launch the dashboard when no subcommand is provided."""
+    if ctx.invoked_subcommand is None:
+        _launch_dashboard()
+
+
 def _print_doctor_guidance(violations: list[str]) -> None:
     if any("No project scope supplied" in item for item in violations):
         typer.echo("Hint: pass `--scope`, run `ese task \"...\"`, or regenerate config with `ese init`.")
@@ -344,14 +370,12 @@ def dashboard(
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the dashboard in a browser"),
 ):
     """Launch the local ESE dashboard for task-first runs and run review."""
-    url = f"http://{host}:{port}"
-    typer.echo(f"Serving ESE dashboard at {url} (Ctrl-C to stop)")
-    serve_dashboard(
+    _launch_dashboard(
         artifacts_dir=artifacts_dir,
         host=host,
         port=port,
+        config=config,
         open_browser=open_browser,
-        config_path=config,
     )
 
 

@@ -48,6 +48,29 @@ def test_roles_command_lists_known_role() -> None:
     assert "architect" in result.stdout
 
 
+def test_no_args_launches_dashboard(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_serve_dashboard(**kwargs):  # noqa: ANN003
+        calls.append(kwargs)
+
+    monkeypatch.setattr("ese.cli.serve_dashboard", _fake_serve_dashboard)
+
+    result = runner.invoke(app, [])
+
+    assert result.exit_code == 0
+    assert "Serving ESE dashboard" in result.stdout
+    assert calls == [
+        {
+            "artifacts_dir": "artifacts",
+            "host": "127.0.0.1",
+            "port": 8765,
+            "open_browser": True,
+            "config_path": None,
+        }
+    ]
+
+
 def test_doctor_command_exits_nonzero_on_violation(tmp_path: Path) -> None:
     cfg = _base_cfg()
     cfg["roles"]["implementer"]["model"] = "gpt-5"
