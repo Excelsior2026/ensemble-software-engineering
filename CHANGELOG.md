@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.1] - 2026-03-23
+
+### Added
+- End-to-end CLI workflow tests covering task, rerun, export, and PR review flows.
+- File-aware diff excerpt helpers shared by PR review and repository context generation.
+- Disk-backed dashboard job persistence so job status survives dashboard restarts.
+
+### Changed
+- Centralized provider/runtime capability rules for wizard defaults, task builder behavior, doctor guidance, and adapter validation.
+- Cached local runtime readiness checks within a pipeline run to avoid repeated Ollama probes and model scans.
+- Improved local runtime docs, troubleshooting, and runtime summaries for built-in vs demo execution.
+
+### Compatibility
+- Config contract remains `version: 1`.
+- No breaking CLI or config-schema changes; this is a backward-compatible patch release.
+
 ## [1.0.0] - 2026-03-04
 
 ### Added
