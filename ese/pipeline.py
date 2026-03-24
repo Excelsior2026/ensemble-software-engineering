@@ -16,6 +16,7 @@ import yaml
 from ese.adapters import AdapterExecutionError, BUILTIN_ADAPTERS
 from ese.config import resolve_prompt_text, resolve_role_model, resolve_scope_text
 from ese.feedback import feedback_prompt_guidance
+from ese.provider_runtime import BUILTIN_RUNTIME_ADAPTERS_TEXT
 
 PIPELINE_ORDER = [
     "architect",
@@ -360,7 +361,7 @@ def _is_parallelizable_role(role: str) -> bool:
 def _load_custom_adapter(reference: str) -> RoleAdapter:
     if ":" not in reference:
         raise PipelineError(
-            "runtime.adapter must be one of {'dry-run', 'openai', 'local', 'custom_api'} or a Python reference in 'module:function' format",
+            f"runtime.adapter must be one of {BUILTIN_RUNTIME_ADAPTERS_TEXT} or a Python reference in 'module:function' format",
         )
 
     module_name, object_name = reference.split(":", 1)

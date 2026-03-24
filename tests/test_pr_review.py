@@ -49,6 +49,8 @@ def test_build_pull_request_review_context_uses_pr_metadata(monkeypatch) -> None
     assert context.head_ref == "billing-retries"
     assert context.pr_number == 42
     assert context.patch_truncated is True
+    assert context.included_patch_files == 1
+    assert context.total_patch_files == 1
     assert "[diff truncated by ESE]" in context.patch
 
 
@@ -62,6 +64,7 @@ def test_build_pr_review_config_embeds_diff_context(monkeypatch) -> None:
         execution_mode="demo",
         artifacts_dir="artifacts/pr-42",
         focus="retry storms and idempotency",
+        max_diff_chars=80,
     )
 
     assert context.review_title == "Harden billing retries"
@@ -69,5 +72,5 @@ def test_build_pr_review_config_embeds_diff_context(monkeypatch) -> None:
     assert "release_manager" in cfg["roles"]
     assert "implementer" not in cfg["roles"]
     assert cfg["input"]["review_type"] == "pull_request"
-    assert "Unified diff" in cfg["input"]["prompt"]
+    assert "Unified diff (truncated to 80 chars; included 1 of 1 file patches):" in cfg["input"]["prompt"]
     assert "retry storms and idempotency" in cfg["input"]["prompt"]

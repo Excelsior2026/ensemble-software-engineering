@@ -8,60 +8,13 @@ from typing import Any, Dict
 import questionary
 
 from ese.config import ConfigValidationError, resolve_role_model, validate_config, write_config
-
-PROVIDER_CHOICES = [
-    "openai",
-    "anthropic",
-    "google",
-    "xai",
-    "openrouter",
-    "huggingface",
-    "local",
-    "custom_api",
-]
-
-PROVIDER_SUPPORT = {
-    "openai": {
-        "live_title": "openai - built-in live adapter",
-        "demo_title": "openai - demo or built-in live adapter",
-        "supports_live": True,
-    },
-    "anthropic": {
-        "live_title": "anthropic - requires custom module adapter",
-        "demo_title": "anthropic - demo only unless you bring a custom adapter",
-        "supports_live": False,
-    },
-    "google": {
-        "live_title": "google - requires custom module adapter",
-        "demo_title": "google - demo only unless you bring a custom adapter",
-        "supports_live": False,
-    },
-    "xai": {
-        "live_title": "xai - requires custom module adapter",
-        "demo_title": "xai - demo only unless you bring a custom adapter",
-        "supports_live": False,
-    },
-    "openrouter": {
-        "live_title": "openrouter - requires custom module adapter",
-        "demo_title": "openrouter - demo only unless you bring a custom adapter",
-        "supports_live": False,
-    },
-    "huggingface": {
-        "live_title": "huggingface - requires custom module adapter",
-        "demo_title": "huggingface - demo only unless you bring a custom adapter",
-        "supports_live": False,
-    },
-    "local": {
-        "live_title": "local - built-in Ollama adapter",
-        "demo_title": "local - demo or built-in Ollama adapter",
-        "supports_live": True,
-    },
-    "custom_api": {
-        "live_title": "custom_api - Responses-compatible gateway",
-        "demo_title": "custom_api - demo or gateway-backed live adapter",
-        "supports_live": True,
-    },
-}
+from ese.provider_runtime import (
+    PROVIDER_CHOICES,
+    builtin_runtime_adapter,
+    default_api_key_env as _default_api_key_env,
+    default_provider_from_env as _provider_default_from_env,
+    provider_runtime_capability,
+)
 
 DEMO_EXECUTION_MODE = "demo"
 LIVE_EXECUTION_MODE = "live"
@@ -320,53 +273,14 @@ ROLE_DEFAULTS_BY_PRESET: Dict[str, Dict[str, Dict[str, Any]]] = {
 }
 
 
-def _default_api_key_env(provider: str) -> str:
-    if provider == "openai":
-        return "OPENAI_API_KEY"
-    if provider == "anthropic":
-        return "ANTHROPIC_API_KEY"
-    if provider == "google":
-        return "GOOGLE_API_KEY"
-    if provider == "xai":
-        return "XAI_API_KEY"
-    if provider == "openrouter":
-        return "OPENROUTER_API_KEY"
-    if provider == "huggingface":
-        return "HF_TOKEN"
-    if provider == "local":
-        return "LOCAL_MODEL"
-    if provider == "custom_api":
-        return "CUSTOM_API_KEY"
-    return "MODEL_TOKEN"
-
-
-def _provider_default_from_env() -> str:
-    detectable_providers = [
-        "openai",
-        "anthropic",
-        "google",
-        "xai",
-        "openrouter",
-        "huggingface",
-    ]
-    configured = [p for p in detectable_providers if os.getenv(_default_api_key_env(p))]
-    if not configured:
-        return "local"
-    if len(configured) == 1:
-        return configured[0]
-    if "openai" in configured:
-        return "openai"
-    return configured[0]
-
-
 def _provider_choices(*, advanced: bool) -> list[questionary.Choice]:
     choices: list[questionary.Choice] = []
     for provider in PROVIDER_CHOICES:
-        support = PROVIDER_SUPPORT[provider]
-        if support["supports_live"] or advanced:
-            title = str(support["live_title"])
+        capability = provider_runtime_capability(provider)
+        if capability.supports_builtin_live or advanced:
+            title = capability.live_title
         else:
-            title = str(support["demo_title"])
+            title = capability.demo_title
         choices.append(questionary.Choice(title=title, value=provider))
     return choices
 
@@ -515,7 +429,8 @@ def _apply_advanced_role_model_overrides(
 
 
 def _select_execution_mode(provider: str, *, advanced: bool) -> str:
-    supports_live = bool(PROVIDER_SUPPORT[provider]["supports_live"])
+    capability = provider_runtime_capability(provider)
+    supports_live = capability.supports_builtin_live
     choices: list[questionary.Choice] = []
 
     if supports_live:
@@ -546,7 +461,7 @@ def _select_execution_mode(provider: str, *, advanced: bool) -> str:
             ),
         )
 
-    if provider == "local":
+    if capability.prefer_live_when_selected:
         default_mode = LIVE_EXECUTION_MODE
     elif supports_live and os.getenv(_default_api_key_env(provider)):
         default_mode = LIVE_EXECUTION_MODE
@@ -571,8 +486,9 @@ def _resolve_runtime_adapter(
     if execution_mode == DEMO_EXECUTION_MODE:
         return "dry-run"
     if execution_mode == LIVE_EXECUTION_MODE:
-        if provider in {"openai", "local", "custom_api"}:
-            return provider
+        builtin_adapter = builtin_runtime_adapter(provider)
+        if builtin_adapter:
+            return builtin_adapter
         if not advanced:
             return "dry-run"
     return questionary.text(

@@ -32,12 +32,46 @@ from ese.templates import list_task_templates, recommend_template_for_scope, run
 class DashboardJobStore:
     """Thread-safe registry for background dashboard jobs."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, storage_dir: str | Path | None = None) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, dict[str, Any]] = {}
+        self._storage_dir = Path(storage_dir) if storage_dir is not None else None
+        if self._storage_dir is not None:
+            self._storage_dir.mkdir(parents=True, exist_ok=True)
+            self._load_persisted_jobs()
+
+    def _load_persisted_jobs(self) -> None:
+        if self._storage_dir is None:
+            return
+        for path in sorted(self._storage_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            job_id = str(payload.get("id") or "").strip()
+            if not job_id:
+                continue
+            self._jobs[job_id] = payload
+
+    def _job_path(self, job_id: str) -> Path | None:
+        if self._storage_dir is None:
+            return None
+        return self._storage_dir / f"{job_id}.json"
+
+    def _persist_job(self, job_id: str) -> None:
+        path = self._job_path(job_id)
+        if path is None:
+            return
+        payload = self._jobs.get(job_id)
+        if payload is None:
+            return
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def start(self, name: str, func, /, **kwargs) -> str:  # noqa: ANN001
         job_id = uuid.uuid4().hex[:12]
+        now = datetime.now().astimezone().isoformat(timespec="seconds")
         with self._lock:
             self._jobs[job_id] = {
                 "id": job_id,
@@ -45,7 +79,10 @@ class DashboardJobStore:
                 "status": "queued",
                 "result": None,
                 "error": None,
+                "created_at": now,
+                "updated_at": now,
             }
+            self._persist_job(job_id)
 
         def _runner() -> None:
             self._update(job_id, status="running")
@@ -63,7 +100,9 @@ class DashboardJobStore:
     def _update(self, job_id: str, **updates: Any) -> None:
         with self._lock:
             if job_id in self._jobs:
+                updates["updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
                 self._jobs[job_id].update(updates)
+                self._persist_job(job_id)
 
     def get(self, job_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -1284,8 +1323,8 @@ def serve_dashboard(
     open_browser: bool = True,
     config_path: str | None = None,
 ) -> str:
-    jobs = DashboardJobStore()
     root_artifacts_dir = str(Path(artifacts_dir))
+    jobs = DashboardJobStore(storage_dir=Path(root_artifacts_dir) / ".ese-dashboard-jobs")
     bootstrap = {
         "artifacts_dir": root_artifacts_dir,
         "config_path": config_path,

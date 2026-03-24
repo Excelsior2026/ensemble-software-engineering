@@ -14,10 +14,27 @@ from urllib.parse import urlparse
 from ese.config import resolve_role_model
 
 DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1"
+_LOCAL_RUNTIME_READY_CACHE_KEY = "_ese_local_runtime_ready"
 
 
 class LocalRuntimeError(RuntimeError):
     """Raised when the local Ollama runtime is unavailable or misconfigured."""
+
+
+def _runtime_ready_cache(cfg: Mapping[str, Any]) -> set[str] | None:
+    if not isinstance(cfg, dict):
+        return None
+
+    cache = cfg.get(_LOCAL_RUNTIME_READY_CACHE_KEY)
+    if isinstance(cache, set):
+        return cache
+
+    if cache is None:
+        created: set[str] = set()
+        cfg[_LOCAL_RUNTIME_READY_CACHE_KEY] = created
+        return created
+
+    return None
 
 
 def local_runtime_selected(cfg: Mapping[str, Any]) -> bool:
@@ -161,6 +178,19 @@ def ensure_local_runtime_ready(
         return
 
     base_url = local_base_url(cfg)
+    required = required_local_models(cfg) if require_models else []
+    cache_key = "|".join(
+        [
+            base_url,
+            "auto" if auto_start else "manual",
+            "models" if require_models else "no-models",
+            ",".join(required),
+        ],
+    )
+    ready_cache = _runtime_ready_cache(cfg)
+    if ready_cache is not None and cache_key in ready_cache:
+        return
+
     if not ollama_running(base_url):
         if not ollama_installed():
             raise LocalRuntimeError(
@@ -181,10 +211,13 @@ def ensure_local_runtime_ready(
             )
 
     if not require_models:
+        if ready_cache is not None:
+            ready_cache.add(cache_key)
         return
 
-    required = required_local_models(cfg)
     if not required:
+        if ready_cache is not None:
+            ready_cache.add(cache_key)
         return
 
     available = fetch_ollama_models(base_url)
@@ -195,3 +228,5 @@ def ensure_local_runtime_ready(
             "Ollama is running but required local models are missing: "
             f"{', '.join(missing)}. Pull them first: {command}",
         )
+    if ready_cache is not None:
+        ready_cache.add(cache_key)

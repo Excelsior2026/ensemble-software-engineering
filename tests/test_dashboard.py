@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
-from ese.dashboard import _allocate_run_artifacts_dir, _export_report_payload, _task_run_kwargs
+from ese.dashboard import DashboardJobStore, _allocate_run_artifacts_dir, _export_report_payload, _task_run_kwargs
 from ese.pipeline import run_pipeline
 
 
@@ -71,3 +72,22 @@ def test_export_report_payload_returns_requested_format(tmp_path: Path) -> None:
     assert junit_type.startswith("application/xml")
     assert junit_name == "ese_report.junit.xml"
     assert "<testsuite" in junit_body
+
+
+def test_dashboard_job_store_persists_jobs(tmp_path: Path) -> None:
+    store = DashboardJobStore(storage_dir=tmp_path / "job-store")
+    job_id = store.start("unit-job", lambda: {"ok": True})
+
+    for _ in range(50):
+        job = store.get(job_id)
+        if job and job["status"] == "completed":
+            break
+        time.sleep(0.01)
+
+    reloaded = DashboardJobStore(storage_dir=tmp_path / "job-store")
+    persisted = reloaded.get(job_id)
+
+    assert persisted is not None
+    assert persisted["status"] == "completed"
+    assert persisted["result"] == {"ok": True}
+    assert (tmp_path / "job-store" / f"{job_id}.json").exists()

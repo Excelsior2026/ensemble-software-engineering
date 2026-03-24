@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ese.config import validate_config, write_config
+from ese.diff_context import build_file_aware_diff_excerpt
 from ese.pipeline import run_pipeline
 from ese.reports import collect_run_report
 from ese.templates import build_task_config
@@ -33,6 +34,8 @@ class PullRequestReviewContext:
     commits: str
     patch: str
     patch_truncated: bool
+    included_patch_files: int
+    total_patch_files: int
     max_diff_chars: int
     pr_url: str | None = None
     pr_number: int | None = None
@@ -138,14 +141,20 @@ def _load_pr_metadata(repo_path: str, pr: str) -> dict[str, Any]:
     return parsed
 
 
-def _truncate_patch(patch: str, limit: int) -> tuple[str, bool]:
+def _truncate_patch(patch: str, limit: int) -> tuple[str, bool, int, int]:
     if limit <= 0:
         raise PullRequestReviewError("max_diff_chars must be > 0")
-    if len(patch) <= limit:
-        return patch, False
-    trimmed = patch[:limit].rstrip()
-    trimmed += "\n\n[diff truncated by ESE]\n"
-    return trimmed, True
+    excerpt = build_file_aware_diff_excerpt(
+        patch,
+        limit=limit,
+        truncated_label="diff truncated by ESE",
+    )
+    return (
+        excerpt.text,
+        excerpt.truncated,
+        excerpt.included_file_patches,
+        excerpt.total_file_patches,
+    )
 
 
 def build_pull_request_review_context(
@@ -178,7 +187,7 @@ def build_pull_request_review_context(
     name_status = _git(repo_root, "diff", "--name-status", "--find-renames", diff_range)
     commits = _git(repo_root, "log", "--oneline", "--no-decorate", diff_range)
     patch_raw = _git(repo_root, "diff", "--no-color", "--find-renames", diff_range)
-    patch, truncated = _truncate_patch(patch_raw, max_diff_chars)
+    patch, truncated, included_patch_files, total_patch_files = _truncate_patch(patch_raw, max_diff_chars)
 
     review_title = (title or str(pr_metadata.get("title") or "")).strip()
     if not review_title:
@@ -204,6 +213,8 @@ def build_pull_request_review_context(
         commits=commits,
         patch=patch,
         patch_truncated=truncated,
+        included_patch_files=included_patch_files,
+        total_patch_files=total_patch_files,
         max_diff_chars=max_diff_chars,
         pr_url=pr_url,
         pr_number=pr_number,
@@ -243,7 +254,10 @@ def _pr_prompt_text(context: PullRequestReviewContext) -> str:
 
     diff_header = "Unified diff:"
     if context.patch_truncated:
-        diff_header = f"Unified diff (truncated to {context.max_diff_chars} chars):"
+        diff_header = (
+            f"Unified diff (truncated to {context.max_diff_chars} chars; "
+            f"included {context.included_patch_files} of {context.total_patch_files} file patches):"
+        )
     lines.extend(["", diff_header, context.patch or "(empty diff)"])
     return "\n".join(lines).strip()
 

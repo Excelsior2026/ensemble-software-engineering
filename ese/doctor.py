@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from ese.config import ConfigValidationError, load_config, resolve_role_model, resolve_scope_text
-from ese.init_wizard import PROVIDER_SUPPORT
+from ese.provider_runtime import supports_builtin_live
 
 
 def _collect_role_names(cfg: Dict[str, Any]) -> List[str]:
@@ -69,7 +69,7 @@ def build_doctor_guidance(cfg: Dict[str, Any], violations: List[str]) -> List[st
     runtime_cfg = cfg.get("runtime") or {}
     provider_name = str(provider_cfg.get("name") or "").strip().lower()
     adapter_name = str(runtime_cfg.get("adapter") or "dry-run").strip().lower()
-    supports_live = bool(PROVIDER_SUPPORT.get(provider_name, {}).get("supports_live"))
+    supports_live = supports_builtin_live(provider_name)
 
     if any("No project scope supplied" in item for item in violations):
         guidance.append("Set input.scope or use `ese task \"...\"` to start from a concrete task description.")

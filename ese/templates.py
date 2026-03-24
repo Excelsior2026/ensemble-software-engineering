@@ -7,14 +7,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from ese.config import ConfigValidationError, validate_config, write_config
+from ese.provider_runtime import (
+    BUILTIN_LIVE_RUNTIME_ADAPTERS,
+    builtin_runtime_adapter,
+    default_api_key_env,
+    provider_runtime_capability,
+    supports_builtin_live,
+)
 from ese.repo_context import RepoContextError, build_repo_context, render_repo_context
 from ese.init_wizard import (
     COMMON_MODELS_BY_PROVIDER,
     GOAL_DEFAULT_ROLES,
-    PROVIDER_SUPPORT,
     RECOMMENDED_MODEL_BY_PROVIDER_GOAL,
     _apply_simple_mode_model_diversity,
-    _default_api_key_env,
     _ensemble_constraints,
     _roles_for_preset,
 )
@@ -174,8 +179,7 @@ def _default_model_for(provider: str, goal_profile: str) -> str:
 
 
 def _supports_builtin_live(provider: str) -> bool:
-    support = PROVIDER_SUPPORT.get(provider, {})
-    return bool(support.get("supports_live"))
+    return supports_builtin_live(provider)
 
 
 def provider_runtime_summary(provider: str, *, execution_mode: str, runtime_adapter: str | None) -> dict[str, Any]:
@@ -183,13 +187,11 @@ def provider_runtime_summary(provider: str, *, execution_mode: str, runtime_adap
     clean_provider = (provider or "").strip().lower()
     clean_mode = (execution_mode or AUTO_EXECUTION_MODE).strip().lower() or AUTO_EXECUTION_MODE
     clean_adapter = (runtime_adapter or "").strip()
-    support = PROVIDER_SUPPORT.get(clean_provider, {})
-    supports_live = bool(support.get("supports_live"))
-    builtin_runtime_adapters = {"openai", "local", "custom_api"}
+    supports_live = supports_builtin_live(clean_provider)
     note = ""
-    if clean_mode == DEMO_EXECUTION_MODE:
+    if clean_mode == DEMO_EXECUTION_MODE or clean_adapter == "dry-run":
         note = f"{clean_provider} will run in demo mode via dry-run artifacts."
-    elif clean_adapter in builtin_runtime_adapters:
+    elif clean_adapter in BUILTIN_LIVE_RUNTIME_ADAPTERS:
         note = f"{clean_provider} uses built-in live adapter '{clean_adapter}'."
     elif clean_adapter:
         note = f"{clean_provider} will use custom runtime adapter '{clean_adapter}'."
@@ -219,12 +221,13 @@ def _resolve_execution_mode(
         raise ConfigValidationError(f"Unsupported execution mode '{requested_mode}'. Choose one of: {available}")
 
     if mode == AUTO_EXECUTION_MODE:
-        if provider == "local":
+        capability = provider_runtime_capability(provider)
+        if capability.prefer_live_when_selected:
             return LIVE_EXECUTION_MODE
         if provider == "custom_api":
-            api_key_present = bool(os.getenv(_default_api_key_env(provider)))
+            api_key_present = bool(os.getenv(default_api_key_env(provider)))
             return LIVE_EXECUTION_MODE if api_key_present and bool(base_url) else DEMO_EXECUTION_MODE
-        if _supports_builtin_live(provider) and os.getenv(_default_api_key_env(provider)):
+        if _supports_builtin_live(provider) and os.getenv(default_api_key_env(provider)):
             return LIVE_EXECUTION_MODE
         if runtime_adapter:
             return LIVE_EXECUTION_MODE
@@ -327,15 +330,17 @@ def build_task_config(
         cfg["runtime"]["adapter"] = "dry-run"
     elif runtime_adapter:
         cfg["runtime"]["adapter"] = runtime_adapter.strip()
-    elif clean_provider in {"openai", "local", "custom_api"}:
-        cfg["runtime"]["adapter"] = clean_provider
     else:
-        raise ConfigValidationError(
-            f"Live execution for provider '{clean_provider}' requires runtime_adapter in module:function format.",
-        )
+        builtin_adapter = builtin_runtime_adapter(clean_provider)
+        if builtin_adapter:
+            cfg["runtime"]["adapter"] = builtin_adapter
+        else:
+            raise ConfigValidationError(
+                f"Live execution for provider '{clean_provider}' requires runtime_adapter in module:function format.",
+            )
 
     if cfg["runtime"]["adapter"] in {"openai", "custom_api"} or clean_provider == "custom_api":
-        cfg["provider"]["api_key_env"] = (api_key_env or _default_api_key_env(clean_provider)).strip()
+        cfg["provider"]["api_key_env"] = (api_key_env or default_api_key_env(clean_provider)).strip()
 
     if cfg["runtime"]["adapter"] == "openai":
         cfg["runtime"]["openai"] = {

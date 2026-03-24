@@ -58,6 +58,16 @@ def test_provider_runtime_summary_labels_builtin_adapters_clearly() -> None:
     assert "custom runtime adapter" not in summary["note"]
 
 
+def test_provider_runtime_summary_treats_dry_run_as_demo() -> None:
+    summary = provider_runtime_summary(
+        "openai",
+        execution_mode="auto",
+        runtime_adapter="dry-run",
+    )
+
+    assert "demo mode via dry-run artifacts" in summary["note"]
+
+
 def test_recommend_template_for_scope_matches_common_intent() -> None:
     assert recommend_template_for_scope("Prepare release rollout and deploy plan") == "release-readiness"
     assert recommend_template_for_scope("Harden auth and close security gaps") == "security-hardening"

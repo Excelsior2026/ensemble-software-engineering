@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ese.diff_context import build_file_aware_diff_excerpt
+
 
 class RepoContextError(ValueError):
     """Raised when repository context cannot be assembled."""
@@ -34,14 +36,20 @@ def _git(repo_path: str, *args: str) -> str:
     return _run_command(["git", *args], cwd=repo_path)
 
 
-def _truncate(text: str, limit: int) -> tuple[str, bool]:
+def _truncate(text: str, limit: int) -> tuple[str, bool, int, int]:
     if limit <= 0:
         raise RepoContextError("max_diff_chars must be > 0")
-    if len(text) <= limit:
-        return text, False
-    trimmed = text[:limit].rstrip()
-    trimmed += "\n\n[repository diff truncated by ESE]\n"
-    return trimmed, True
+    excerpt = build_file_aware_diff_excerpt(
+        text,
+        limit=limit,
+        truncated_label="repository diff truncated by ESE",
+    )
+    return (
+        excerpt.text,
+        excerpt.truncated,
+        excerpt.included_file_patches,
+        excerpt.total_file_patches,
+    )
 
 
 def build_repo_context(
@@ -58,7 +66,13 @@ def build_repo_context(
     diffstat = _git(repo_root, "diff", "--stat", "--find-renames", "HEAD") if include_diff else ""
     changed_files = _git(repo_root, "diff", "--name-status", "--find-renames", "HEAD") if include_diff else ""
     patch_raw = _git(repo_root, "diff", "--no-color", "--find-renames", "HEAD") if include_diff else ""
-    patch, patch_truncated = _truncate(patch_raw, max_diff_chars) if include_diff and patch_raw else ("", False)
+    if include_diff and patch_raw:
+        patch, patch_truncated, included_patch_files, total_patch_files = _truncate(
+            patch_raw,
+            max_diff_chars,
+        )
+    else:
+        patch, patch_truncated, included_patch_files, total_patch_files = "", False, 0, 0
     return {
         "repo_path": repo_root,
         "branch": branch,
@@ -67,6 +81,8 @@ def build_repo_context(
         "changed_files": changed_files,
         "patch": patch,
         "patch_truncated": patch_truncated,
+        "included_patch_files": included_patch_files,
+        "total_patch_files": total_patch_files,
         "max_diff_chars": max_diff_chars,
     }
 
@@ -91,6 +107,11 @@ def render_repo_context(context: dict[str, Any]) -> str:
     if patch:
         header = "Unified diff:"
         if bool(context.get("patch_truncated")):
-            header = f"Unified diff (truncated to {context.get('max_diff_chars')} chars):"
+            included = int(context.get("included_patch_files") or 0)
+            total = int(context.get("total_patch_files") or 0)
+            header = (
+                f"Unified diff (truncated to {context.get('max_diff_chars')} chars; "
+                f"included {included} of {total} file patches):"
+            )
         lines.extend(["", header, patch])
     return "\n".join(lines).strip()

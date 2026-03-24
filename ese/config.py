@@ -8,6 +8,8 @@ from typing import Any, Dict, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from ese.provider_runtime import BUILTIN_RUNTIME_ADAPTERS, BUILTIN_RUNTIME_ADAPTERS_TEXT
+
 CONFIG_VERSION = 1
 
 
@@ -192,12 +194,11 @@ class RuntimeConfig(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("must be a non-empty string")
-        builtin_adapters = {"dry-run", "openai", "local", "custom_api"}
-        if cleaned not in builtin_adapters:
+        if cleaned not in BUILTIN_RUNTIME_ADAPTERS:
             module_name, separator, object_name = cleaned.partition(":")
             if not separator or not module_name.strip() or not object_name.strip():
                 raise ValueError(
-                    "must be one of {'dry-run', 'openai', 'local', 'custom_api'} or use 'module:function' format",
+                    f"must be one of {BUILTIN_RUNTIME_ADAPTERS_TEXT} or use 'module:function' format",
                 )
         return cleaned
 
