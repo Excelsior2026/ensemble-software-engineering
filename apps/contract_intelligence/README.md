@@ -18,6 +18,24 @@ The first slice is a `bid_review` workflow that turns a contract package into:
 - obligations preview
 - adversarial review challenges
 
+## Local usage
+
+Run the deterministic pilot over a project folder from the repo root:
+
+```bash
+python -m apps.contract_intelligence bid-review ./sample_project
+```
+
+Or send artifacts somewhere specific:
+
+```bash
+python -m apps.contract_intelligence bid-review ./sample_project --artifacts-dir ./tmp/bid_review
+```
+
+The runner currently works best with plain-text inputs such as `.md`, `.txt`,
+`.json`, `.yaml`, and `.docx`. Binary PDFs are detected as files but are not yet
+parsed for text.
+
 ## Folder map
 
 - `domain/`: shared pilot models and enums
