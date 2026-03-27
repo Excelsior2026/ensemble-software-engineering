@@ -324,8 +324,10 @@ def test_suggestions_command_renders_filtered_code_suggestions(monkeypatch) -> N
     assert "Validate the tenant token" in result.stdout
 
 
-def test_pr_command_runs_pull_request_review(monkeypatch) -> None:
+def test_pr_command_runs_pull_request_review(monkeypatch, tmp_path: Path) -> None:
     context = type("Context", (), {"head_ref": "feature", "base_ref": "origin/main"})()
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
 
     def _fake_build_pr_review_config(**kwargs):  # noqa: ANN003
         return (
@@ -335,12 +337,12 @@ def test_pr_command_runs_pull_request_review(monkeypatch) -> None:
                 "roles": {"adversarial_reviewer": {}},
                 "input": {"scope": "Review the pull request safely"},
                 "runtime": {"adapter": "dry-run"},
-                "output": {"artifacts_dir": "/tmp/artifacts"},
+                "output": {"artifacts_dir": str(artifacts_dir)},
             },
         )
 
     monkeypatch.setattr("ese.cli.build_pr_review_config", _fake_build_pr_review_config)
-    monkeypatch.setattr("ese.cli.run_pipeline", lambda **kwargs: "/tmp/artifacts/ese_summary.md")
+    monkeypatch.setattr("ese.cli.run_pipeline", lambda **kwargs: str(artifacts_dir / "ese_summary.md"))
     monkeypatch.setattr(
         "ese.cli.collect_run_report",
         lambda artifacts_dir: {"roles": [], "blockers": [], "next_steps": []},
