@@ -178,6 +178,13 @@ def _guidance_cfg(config: str) -> dict[str, Any]:
         return {}
 
 
+def _effective_artifacts_dir(cfg: dict[str, Any], fallback: str | None = None) -> str:
+    configured = str((cfg.get("output") or {}).get("artifacts_dir") or "").strip()
+    if configured:
+        return configured
+    return str(fallback or "artifacts")
+
+
 def _run_with_policy(
     *,
     kind: str,
@@ -408,14 +415,15 @@ def task(
             typer.echo(yaml.safe_dump(cfg, sort_keys=False).strip())
         if write_config_path:
             write_config(write_config_path, cfg)
-        config_snapshot_path = str(Path(artifacts_dir) / CONFIG_SNAPSHOT_NAME)
+        effective_artifacts_dir = _effective_artifacts_dir(cfg, artifacts_dir)
+        config_snapshot_path = str(Path(effective_artifacts_dir) / CONFIG_SNAPSHOT_NAME)
         _run_with_policy(
             kind="task",
             cfg=cfg,
-            artifacts_dir=artifacts_dir,
+            artifacts_dir=effective_artifacts_dir,
             quiet=quiet,
             failure_label="ESE task failed",
-            execute=lambda: run_pipeline(cfg=cfg, artifacts_dir=artifacts_dir),
+            execute=lambda: run_pipeline(cfg=cfg, artifacts_dir=effective_artifacts_dir),
             success_message=lambda summary_path: (
                 f"✅ Task run completed using template '{chosen_template}' via "
                 f"{str((cfg.get('runtime') or {}).get('adapter') or 'dry-run')}. "
@@ -468,12 +476,13 @@ def pr(
         )
         if write_config_path:
             write_config(write_config_path, cfg)
-        review_path = str(Path(artifacts_dir) / "pr_review.md")
-        config_snapshot_path = str(Path(artifacts_dir) / CONFIG_SNAPSHOT_NAME)
+        effective_artifacts_dir = _effective_artifacts_dir(cfg, artifacts_dir)
+        review_path = str(Path(effective_artifacts_dir) / "pr_review.md")
+        config_snapshot_path = str(Path(effective_artifacts_dir) / CONFIG_SNAPSHOT_NAME)
 
         def _execute_pr() -> str:
-            summary_path = run_pipeline(cfg=cfg, artifacts_dir=artifacts_dir)
-            report = collect_run_report(artifacts_dir)
+            summary_path = run_pipeline(cfg=cfg, artifacts_dir=effective_artifacts_dir)
+            report = collect_run_report(effective_artifacts_dir)
             Path(review_path).write_text(
                 render_pull_request_review_markdown(context, report),
                 encoding="utf-8",
@@ -483,7 +492,7 @@ def pr(
         _run_with_policy(
             kind="pr-review",
             cfg=cfg,
-            artifacts_dir=artifacts_dir,
+            artifacts_dir=effective_artifacts_dir,
             quiet=quiet,
             failure_label="ESE PR review failed",
             execute=_execute_pr,
