@@ -208,7 +208,7 @@ def provider_runtime_summary(provider: str, *, execution_mode: str, runtime_adap
     }
 
 
-def _resolve_execution_mode(
+def resolve_execution_mode(
     *,
     provider: str,
     requested_mode: str,
@@ -261,7 +261,7 @@ def build_task_config(
 
     clean_provider = (provider or "openai").strip().lower()
     template = resolve_task_template(template_key)
-    effective_mode = _resolve_execution_mode(
+    effective_mode = resolve_execution_mode(
         provider=clean_provider,
         requested_mode=execution_mode,
         runtime_adapter=runtime_adapter,

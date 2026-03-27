@@ -6,6 +6,9 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
+# Jaccard similarity threshold for overlap detection (0.0-1.0)
+# Roles with similarity >= this value will generate overlap warnings
+OVERLAP_SIMILARITY_THRESHOLD = 0.35
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
@@ -316,7 +319,7 @@ def _detect_overlap_warnings(drafts: Iterable[FrameworkRoleDraft]) -> list[str]:
             if len(shared) < 2 or not union:
                 continue
             similarity = len(shared) / len(union)
-            if similarity < 0.35:
+            if similarity < OVERLAP_SIMILARITY_THRESHOLD:
                 continue
             shared_text = ", ".join(sorted(shared))
             warnings.append(

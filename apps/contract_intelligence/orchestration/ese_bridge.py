@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -10,15 +9,9 @@ from apps.contract_intelligence.orchestration.pipeline import bid_review_pipelin
 from apps.contract_intelligence.orchestration.role_catalog import BID_REVIEW_ROLE_CATALOG
 from ese.config import validate_config, write_config
 from ese.pipeline import run_pipeline
-from ese.provider_runtime import builtin_runtime_adapter, default_api_key_env, provider_runtime_capability, supports_builtin_live
-from ese.templates import AUTO_EXECUTION_MODE, DEMO_EXECUTION_MODE, LIVE_EXECUTION_MODE, provider_runtime_summary
+from ese.provider_runtime import builtin_runtime_adapter, default_api_key_env
+from ese.templates import DEMO_EXECUTION_MODE, resolve_execution_mode, provider_runtime_summary
 
-
-SUPPORTED_EXECUTION_MODES = {
-    AUTO_EXECUTION_MODE,
-    DEMO_EXECUTION_MODE,
-    LIVE_EXECUTION_MODE,
-}
 
 DEFAULT_MODEL_BY_PROVIDER = {
     "openai": "gpt-5-mini",
@@ -89,32 +82,6 @@ def _ordered_role_keys() -> list[str]:
     return ordered
 
 
-def _resolve_execution_mode(
-    *,
-    provider: str,
-    requested_mode: str,
-    runtime_adapter: str | None,
-    base_url: str | None,
-) -> str:
-    mode = (requested_mode or AUTO_EXECUTION_MODE).strip().lower()
-    if mode not in SUPPORTED_EXECUTION_MODES:
-        available = ", ".join(sorted(SUPPORTED_EXECUTION_MODES))
-        raise ValueError(f"Unsupported execution mode '{requested_mode}'. Choose one of: {available}")
-
-    if mode == AUTO_EXECUTION_MODE:
-        capability = provider_runtime_capability(provider)
-        if capability.prefer_live_when_selected:
-            return LIVE_EXECUTION_MODE
-        if provider == "custom_api":
-            return LIVE_EXECUTION_MODE if os.getenv(default_api_key_env(provider)) and base_url else DEMO_EXECUTION_MODE
-        if supports_builtin_live(provider) and os.getenv(default_api_key_env(provider)):
-            return LIVE_EXECUTION_MODE
-        if runtime_adapter:
-            return LIVE_EXECUTION_MODE
-        return DEMO_EXECUTION_MODE
-    return mode
-
-
 def _default_model_for(provider: str) -> str:
     return DEFAULT_MODEL_BY_PROVIDER.get(provider, "model")
 
@@ -174,7 +141,7 @@ def build_bid_review_ese_config(
 ) -> dict[str, Any]:
     project_path = Path(project_dir).expanduser().resolve()
     clean_provider = (provider or "local").strip().lower()
-    effective_mode = _resolve_execution_mode(
+    effective_mode = resolve_execution_mode(
         provider=clean_provider,
         requested_mode=execution_mode,
         runtime_adapter=runtime_adapter,

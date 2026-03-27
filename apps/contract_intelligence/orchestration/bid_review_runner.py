@@ -18,6 +18,19 @@ SEVERITY_ORDER = {
     Severity.CRITICAL: 4,
 }
 
+# Confidence score constants for finding and decision calculations
+_SINGLE_EVIDENCE_CONFIDENCE = 0.68
+_MULTI_EVIDENCE_CONFIDENCE = 0.78
+_MAX_FINDING_CONFIDENCE = 0.90
+_PUBLIC_OVERLAY_CONFIDENCE = 0.72
+_NO_OVERLAY_CONFIDENCE = 0.56
+_BASE_DECISION_CONFIDENCE = 0.84
+_MISSING_DOC_PENALTY = 0.08
+_UNREADABLE_DOC_PENALTY = 0.04
+_HIGH_FINDING_PENALTY = 0.08
+_MAX_UNREADABLE_PENALTY_COUNT = 3
+_MIN_DECISION_CONFIDENCE = 0.35
+
 
 @dataclass(frozen=True)
 class FindingRule:
@@ -225,8 +238,8 @@ def _finding_from_rule(rule: FindingRule, documents: list[LoadedDocument]) -> Fi
     if not evidence:
         return None
 
-    confidence = 0.68 if len(evidence) == 1 else 0.78
-    confidence = min(confidence, 0.9)
+    confidence = _SINGLE_EVIDENCE_CONFIDENCE if len(evidence) == 1 else _MULTI_EVIDENCE_CONFIDENCE
+    confidence = min(confidence, _MAX_FINDING_CONFIDENCE)
     return Finding(
         id=f"{rule.role}:{rule.category}",
         role=rule.role,
@@ -335,7 +348,7 @@ def _relationship_strategy(
         if has_public_overlay
         else "Commercial terms may be negotiable, but the current package still needs structured human review before a bid commitment."
     )
-    confidence = 0.72 if has_public_overlay else 0.56
+    confidence = _PUBLIC_OVERLAY_CONFIDENCE if has_public_overlay else _NO_OVERLAY_CONFIDENCE
     return {
         "negotiation_posture": posture,
         "sensitive_issues": sensitive_issues,
@@ -386,12 +399,12 @@ def _decision_summary(
         severity for severity, score in SEVERITY_ORDER.items() if score == max(max_severity, SEVERITY_ORDER[Severity.HIGH] if missing_docs else max_severity)
     )
 
-    confidence = 0.84
-    confidence -= 0.08 * len(missing_docs)
-    confidence -= 0.04 * min(len(unreadable_documents), 3)
+    confidence = _BASE_DECISION_CONFIDENCE
+    confidence -= _MISSING_DOC_PENALTY * len(missing_docs)
+    confidence -= _UNREADABLE_DOC_PENALTY * min(len(unreadable_documents), _MAX_UNREADABLE_PENALTY_COUNT)
     if high_or_worse:
-        confidence -= 0.08
-    confidence = max(0.35, min(confidence, 0.9))
+        confidence -= _HIGH_FINDING_PENALTY
+    confidence = max(_MIN_DECISION_CONFIDENCE, min(confidence, _MAX_FINDING_CONFIDENCE))
 
     human_review_required = bool(review_challenges.get("human_review_required")) or confidence < 0.75
 

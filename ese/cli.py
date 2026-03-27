@@ -556,7 +556,6 @@ def feedback(
             role=role,
             title=title,
             feedback=rating,
-            artifacts_dir=artifacts_dir,
             details=details,
         )
     except ValueError as err:
