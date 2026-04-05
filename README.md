@@ -272,6 +272,17 @@ Use `ese policies` to list the installed checks in the current environment.
 
 This repository now carries a sample external policy plugin in [`examples/release_policy_plugin`](examples/release_policy_plugin).
 
+## External Reporting Plugins
+
+Installed reporting plugins can extend:
+
+- `ese export` through the `ese.report_exporters` Python entry point group
+- the dashboard artifact viewer and run documents through the `ese.artifact_views` Python entry point group
+
+Use `ese exporters` and `ese views` to list what is available in the current environment.
+
+This repository now carries a sample external reporting plugin in [`examples/release_reporting_plugin`](examples/release_reporting_plugin).
+
 ## Provider/model selection and adapters
 
 Wizard provider presets: `openai`, `anthropic`, `google`, `xai`, `openrouter`, `huggingface`, `local`, `custom_api`.

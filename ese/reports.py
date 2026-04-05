@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from ese.artifact_views import (
+    ARTIFACT_VIEW_DOCUMENT_PREFIX,
+    list_available_artifact_view_documents,
+    render_external_artifact_view,
+)
 from ese.feedback import feedback_summary
 
 SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
@@ -695,6 +700,10 @@ def collect_run_report(artifacts_dir: str, *, include_comparison: bool = True) -
     report["assurance_note"] = assurance_note
     report["top_blocker"] = blockers[0] if blockers else None
     report["next_recommended_action"] = report["suggested_actions"][0] if report["suggested_actions"] else None
+    report["documents"] = [
+        *report["documents"],
+        *list_available_artifact_view_documents(report),
+    ]
     return report
 
 
@@ -773,8 +782,18 @@ def load_artifact_view(
         }
 
     doc = next((item for item in report.get("documents", []) if item.get("key") == document), None)
+    if doc is None and document and document.startswith(ARTIFACT_VIEW_DOCUMENT_PREFIX):
+        try:
+            return render_external_artifact_view(report, document=document, max_chars=max_chars)
+        except ValueError as err:
+            raise RunReportError(str(err)) from err
     if doc is None:
         raise RunReportError(f"No document found for key '{document}'.")
+    if doc.get("source") == "external_view":
+        try:
+            return render_external_artifact_view(report, document=document or "", max_chars=max_chars)
+        except ValueError as err:
+            raise RunReportError(str(err)) from err
     path = Path(str(doc["path"]))
     content = path.read_text(encoding="utf-8")
     truncated = len(content) > max_chars

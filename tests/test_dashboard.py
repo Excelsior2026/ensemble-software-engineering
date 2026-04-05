@@ -79,6 +79,24 @@ def test_export_report_payload_returns_requested_format(tmp_path: Path) -> None:
     assert "<testsuite" in junit_body
 
 
+def test_export_report_payload_supports_external_exporters(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.dashboard.render_report_export",
+        lambda report, export_format: (
+            "role,severity\narchitect,HIGH\n",
+            "text/csv; charset=utf-8",
+            "ese_blockers.csv",
+        ),
+    )
+    monkeypatch.setattr("ese.dashboard.collect_run_report", lambda artifacts_dir: {"blockers": []})
+
+    body, content_type, filename = _export_report_payload("artifacts", "blocker-csv")
+
+    assert "architect,HIGH" in body
+    assert content_type.startswith("text/csv")
+    assert filename == "ese_blockers.csv"
+
+
 def test_dashboard_job_store_persists_jobs(tmp_path: Path) -> None:
     store = DashboardJobStore(storage_dir=tmp_path / "job-store")
     job_id = store.start("unit-job", lambda: {"ok": True})

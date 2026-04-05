@@ -8,6 +8,7 @@ from typing import Any, Callable
 import typer
 import yaml
 
+from ese.artifact_views import discover_artifact_views
 from ese.config import ConfigValidationError, load_config, write_config
 from ese.config_packs import list_config_packs
 from ese.dashboard import serve_dashboard
@@ -28,14 +29,17 @@ from ese.pr_review import (
     build_pr_review_config,
     render_pull_request_review_markdown,
 )
+from ese.report_exporters import (
+    discover_external_report_exporters,
+    list_builtin_report_exporters,
+    render_report_export,
+)
 from ese.reports import (
     RunReportError,
     collect_run_report,
     render_code_suggestions_json,
     render_code_suggestions_markdown,
-    render_junit,
     render_report_text,
-    render_sarif,
     render_status_text,
 )
 from ese.templates import (
@@ -301,6 +305,42 @@ def list_policies():
             typer.echo(f"  - {check.key}: {check.title} - {check.summary}")
     if failures:
         typer.echo("Broken external policy checks:")
+        for failure in failures:
+            typer.echo(f"  - {failure.entry_point}: {failure.error}")
+
+
+@app.command("exporters")
+def list_exporters():
+    """List built-in and external report exporters."""
+    typer.echo("Built-in report exporters:")
+    for exporter in list_builtin_report_exporters():
+        typer.echo(f"  - {exporter.key}: {exporter.title} - {exporter.summary}")
+
+    exporters, failures = discover_external_report_exporters()
+    if exporters:
+        typer.echo("Installed external report exporters:")
+        for exporter in exporters:
+            typer.echo(f"  - {exporter.key}: {exporter.title} - {exporter.summary}")
+    if failures:
+        typer.echo("Broken external report exporters:")
+        for failure in failures:
+            typer.echo(f"  - {failure.entry_point}: {failure.error}")
+
+
+@app.command("views")
+def list_views():
+    """List installed external artifact views."""
+    views, failures = discover_artifact_views()
+    if not views and not failures:
+        typer.echo("No external artifact views installed.")
+        return
+
+    if views:
+        typer.echo("Installed external artifact views:")
+        for view in views:
+            typer.echo(f"  - {view.key}: {view.title} - {view.summary}")
+    if failures:
+        typer.echo("Broken external artifact views:")
         for failure in failures:
             typer.echo(f"  - {failure.entry_point}: {failure.error}")
 
@@ -720,7 +760,10 @@ def rerun(
 @app.command("export")
 def export(
     artifacts_dir: str = typer.Option("artifacts", help="Directory containing run artifacts"),
-    format: str = typer.Option("sarif", help="Export format: sarif or junit"),
+    format: str = typer.Option(
+        "sarif",
+        help="Export format key (built-in: sarif, junit, plus installed plugins)",
+    ),
     output_path: str | None = typer.Option(None, help="Optional output path override"),
 ):
     """Export run findings in CI-friendly formats."""
@@ -731,15 +774,12 @@ def export(
         raise typer.Exit(code=2) from err
 
     clean_format = format.strip().lower()
-    if clean_format == "sarif":
-        payload = render_sarif(report)
-        target = output_path or str(Path(artifacts_dir) / "ese_report.sarif.json")
-    elif clean_format == "junit":
-        payload = render_junit(report)
-        target = output_path or str(Path(artifacts_dir) / "ese_report.junit.xml")
-    else:
-        typer.echo("❌ ESE export failed: format must be 'sarif' or 'junit'")
-        raise typer.Exit(code=2)
+    try:
+        payload, _content_type, default_filename = render_report_export(report, clean_format)
+    except ValueError as err:
+        typer.echo(f"❌ ESE export failed: {err}")
+        raise typer.Exit(code=2) from err
+    target = output_path or str(Path(artifacts_dir) / default_filename)
 
     Path(target).write_text(payload, encoding="utf-8")
     typer.echo(f"✅ Exported {clean_format} report: {target}")

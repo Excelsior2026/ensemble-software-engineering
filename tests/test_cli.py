@@ -6,9 +6,11 @@ from pathlib import Path
 import yaml
 from typer.testing import CliRunner
 
+from ese.artifact_views import ArtifactViewDefinition
 from ese.cli import app, main
 from ese.config_packs import ConfigPackDefinition, PackRoleDefinition
 from ese.policy_checks import PolicyCheckDefinition
+from ese.report_exporters import ReportExporterDefinition
 
 runner = CliRunner()
 
@@ -111,6 +113,54 @@ def test_policies_command_lists_installed_policies(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "release-safety" in result.stdout
+
+
+def test_exporters_command_lists_builtin_and_external_exporters(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.cli.discover_external_report_exporters",
+        lambda: (
+            [
+                ReportExporterDefinition(
+                    key="blocker-csv",
+                    title="Blocker CSV",
+                    summary="CSV export of blocker findings.",
+                    content_type="text/csv; charset=utf-8",
+                    default_filename="ese_blockers.csv",
+                    render=lambda report: "role,severity\narchitect,HIGH\n",
+                )
+            ],
+            [],
+        ),
+    )
+
+    result = runner.invoke(app, ["exporters"])
+
+    assert result.exit_code == 0
+    assert "sarif" in result.stdout
+    assert "blocker-csv" in result.stdout
+
+
+def test_views_command_lists_installed_artifact_views(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.cli.discover_artifact_views",
+        lambda: (
+            [
+                ArtifactViewDefinition(
+                    key="release-brief",
+                    title="Release Brief",
+                    summary="Generated release brief for dashboard viewing.",
+                    format="md",
+                    render=lambda report: "# Release Brief\n",
+                )
+            ],
+            [],
+        ),
+    )
+
+    result = runner.invoke(app, ["views"])
+
+    assert result.exit_code == 0
+    assert "release-brief" in result.stdout
 
 
 def test_no_args_prints_help_when_non_interactive() -> None:
@@ -348,6 +398,25 @@ def test_export_and_feedback_commands_write_outputs(tmp_path: Path) -> None:
     assert export_path.exists()
     assert feedback_result.exit_code == 0
     assert "Feedback recorded" in feedback_result.stdout
+
+
+def test_export_command_supports_external_exporters(tmp_path: Path, monkeypatch) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    monkeypatch.setattr("ese.cli.collect_run_report", lambda path: {"artifacts_dir": path, "blockers": []})
+    monkeypatch.setattr(
+        "ese.cli.render_report_export",
+        lambda report, export_format: (
+            "role,severity\narchitect,HIGH\n",
+            "text/csv; charset=utf-8",
+            "ese_blockers.csv",
+        ),
+    )
+
+    result = runner.invoke(app, ["export", "--artifacts-dir", str(artifacts_dir), "--format", "blocker-csv"])
+
+    assert result.exit_code == 0
+    assert (artifacts_dir / "ese_blockers.csv").exists()
 
 
 def test_suggestions_command_renders_filtered_code_suggestions(monkeypatch) -> None:

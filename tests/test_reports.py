@@ -173,6 +173,47 @@ def test_load_artifact_view_supports_role_and_document_targets(tmp_path: Path) -
     assert "# ESE Summary" in summary_view["content"]
 
 
+def test_collect_run_report_and_load_artifact_view_support_external_views(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    run_pipeline(_cfg(), artifacts_dir=str(artifacts_dir))
+
+    monkeypatch.setattr(
+        "ese.reports.list_available_artifact_view_documents",
+        lambda report: [
+            {
+                "key": "view:release-brief",
+                "title": "Release Brief",
+                "path": "view:release-brief",
+                "format": "md",
+                "source": "external_view",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "ese.reports.render_external_artifact_view",
+        lambda report, document, max_chars: {
+            "kind": "document",
+            "key": document,
+            "title": "Release Brief",
+            "path": document,
+            "format": "md",
+            "content": "# Release Brief\n\nAll clear.\n",
+            "truncated": False,
+            "source": "external_view",
+        },
+    )
+
+    report = collect_run_report(str(artifacts_dir))
+    view = load_artifact_view(str(artifacts_dir), document="view:release-brief")
+
+    assert any(item["key"] == "view:release-brief" for item in report["documents"])
+    assert view["source"] == "external_view"
+    assert "All clear." in view["content"]
+
+
 def test_collect_run_report_includes_comparison_feedback_and_code_suggestions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

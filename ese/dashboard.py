@@ -18,13 +18,12 @@ from ese.doctor import evaluate_doctor
 from ese.feedback import record_feedback
 from ese.pipeline import run_pipeline
 from ese.pr_review import PullRequestReviewError, run_pr_review
+from ese.report_exporters import list_report_exporters, render_report_export
 from ese.reports import (
     RunReportError,
     collect_run_report,
     list_recent_runs,
     load_artifact_view,
-    render_junit,
-    render_sarif,
 )
 from ese.templates import (
     list_task_templates,
@@ -236,20 +235,10 @@ def _task_run_kwargs(payload: dict[str, Any], *, root_artifacts_dir: str) -> dic
 
 def _export_report_payload(artifacts_dir: str, export_format: str) -> tuple[str, str, str]:
     report = collect_run_report(artifacts_dir)
-    clean_format = export_format.strip().lower()
-    if clean_format == "sarif":
-        return (
-            render_sarif(report),
-            "application/sarif+json; charset=utf-8",
-            "ese_report.sarif.json",
-        )
-    if clean_format == "junit":
-        return (
-            render_junit(report),
-            "application/xml; charset=utf-8",
-            "ese_report.junit.xml",
-        )
-    raise ConfigValidationError("format must be 'sarif' or 'junit'.")
+    try:
+        return render_report_export(report, export_format)
+    except ValueError as err:
+        raise ConfigValidationError(str(err)) from err
 
 
 def _dashboard_html(bootstrap: dict[str, Any]) -> str:
@@ -812,10 +801,9 @@ def _dashboard_html(bootstrap: dict[str, Any]) -> str:
       const documentButtons = (report.documents || []).map((document) => `
         <button type="button" class="secondary" data-open-document="${document.key}">${escapeHtml(document.title)}</button>
       `).join('');
-      const exportButtons = `
-        <button type="button" class="secondary" data-export-format="sarif">Export SARIF</button>
-        <button type="button" class="secondary" data-export-format="junit">Export JUnit</button>
-      `;
+      const exportButtons = (bootstrap.exporters || []).map((exporter) => `
+        <button type="button" class="secondary" data-export-format="${exporter.key}">Export ${escapeHtml(exporter.title)}</button>
+      `).join('');
       const pills = [
         report.status ? `<span class="pill ${statusClass(report.status)}">Status: ${report.status}</span>` : '',
         report.provider ? `<span class="pill">Provider: ${escapeHtml(report.provider)}</span>` : '',
@@ -1333,6 +1321,13 @@ def serve_dashboard(
         "artifacts_dir": root_artifacts_dir,
         "config_path": config_path,
         "repo_path": str(Path.cwd()),
+        "exporters": [
+            {
+                "key": exporter.key,
+                "title": exporter.title,
+            }
+            for exporter in list_report_exporters()
+        ],
     }
 
     class DashboardHandler(BaseHTTPRequestHandler):

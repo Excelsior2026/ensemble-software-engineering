@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "release-reporting-ese-plugin"
+version = "0.1.0"
+description = "External ESE reporting plugin for exports and virtual artifact views."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["ese-cli>=1.0.0"]
+
+[project.entry-points."ese.report_exporters"]
+blocker_csv = "release_reporting_plugin.exporters:load_exporter"
+
+[project.entry-points."ese.artifact_views"]
+release_brief = "release_reporting_plugin.views:load_view"
+
+[tool.setuptools.packages.find]
+where = ["src"]

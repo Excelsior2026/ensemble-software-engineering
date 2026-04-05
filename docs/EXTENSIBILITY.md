@@ -149,10 +149,65 @@ def load_policy():
     )
 ```
 
+## Report exporters
+
+External report exporters are discovered through the Python entry point group `ese.report_exporters`.
+
+Each entry point should load to either:
+
+- a `ReportExporterDefinition`
+- a mapping shaped like `ReportExporterDefinition`
+- a callable that accepts the collected run report and returns a string payload
+
+Each exporter exposes:
+
+- `key`
+- `title`
+- `summary`
+- `content_type`
+- `default_filename`
+- `render`
+
+Packaging example:
+
+```toml
+[project.entry-points."ese.report_exporters"]
+blocker_csv = "my_reporting_plugin.exporters:load_exporter"
+```
+
+## Artifact views
+
+External artifact views are discovered through the Python entry point group `ese.artifact_views`.
+
+Each entry point should load to either:
+
+- an `ArtifactViewDefinition`
+- a mapping shaped like `ArtifactViewDefinition`
+- a callable that accepts the collected run report and returns a string or mapping payload
+
+Each view exposes:
+
+- `key`
+- `title`
+- `summary`
+- `format`
+- `render`
+- optional `available`
+
+Views are surfaced inside the normal `report["documents"]` payload using keys prefixed with `view:`.
+
+Packaging example:
+
+```toml
+[project.entry-points."ese.artifact_views"]
+release_brief = "my_reporting_plugin.views:load_view"
+```
+
 ## Operating model
 
 - Keep ESE releaseable with zero external packs installed.
 - Treat packs as additive integrations, not core dependencies.
 - Treat policy checks as additive governance layers, not hard-coded product logic in ESE core.
+- Treat exporters and artifact views as additive reporting layers, not new built-in output formats for every vertical.
 - Put domain tests in the domain repository, not in ESE core.
 - Keep the pack contract stable so vertical repos can upgrade ESE without forking it.
