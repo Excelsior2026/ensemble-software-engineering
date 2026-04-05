@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import yaml
 
-from ese.doctor import evaluate_doctor, run_doctor
+from ese.doctor import build_doctor_guidance, evaluate_doctor, run_doctor
+from ese.policy_checks import POLICY_WARNING, PolicyCheckDefinition, PolicyCheckMessage
 
 
 def _write_cfg(path, cfg: dict) -> str:
@@ -161,3 +162,66 @@ def test_doctor_enforces_require_json_for_roles(tmp_path) -> None:
 
     assert not ok
     assert "constraints.require_json_for_roles requires output.enforce_json=true" in violations[0]
+
+
+def test_doctor_fails_on_external_policy_errors(monkeypatch) -> None:
+    cfg = _base_cfg()
+    policy = PolicyCheckDefinition(
+        key="release-safety",
+        title="Release Safety",
+        summary="Require release-focused roles for rollout scopes.",
+        check=lambda context: {
+            "severity": "error",
+            "message": "Release-sensitive scope requires a release-focused role.",
+            "hint": "Add a release role such as release_manager or release_reviewer before running.",
+        },
+    )
+    monkeypatch.setattr("ese.doctor._evaluate_policy_checks", lambda context: [  # type: ignore[assignment]
+        PolicyCheckMessage(
+            policy_key=policy.key,
+            severity="error",
+            message="Release-sensitive scope requires a release-focused role.",
+            hint="Add a release role such as release_manager or release_reviewer before running.",
+        )
+    ])
+
+    ok, violations, _role_models = evaluate_doctor(cfg)
+
+    assert not ok
+    assert "[policy:release-safety] Release-sensitive scope requires a release-focused role." in violations
+
+
+def test_doctor_returns_external_policy_warnings(monkeypatch) -> None:
+    cfg = _base_cfg()
+    monkeypatch.setattr("ese.doctor._evaluate_policy_checks", lambda context: [  # type: ignore[assignment]
+        PolicyCheckMessage(
+            policy_key="release-safety",
+            severity=POLICY_WARNING,
+            message="Review scope lacks an explicit release owner.",
+            hint="Add a release-focused role for rollout-sensitive scopes.",
+        )
+    ])
+
+    ok, violations, _role_models = evaluate_doctor(cfg)
+
+    assert ok
+    assert violations == ["[policy:release-safety] Review scope lacks an explicit release owner."]
+
+
+def test_doctor_guidance_includes_external_policy_hints(monkeypatch) -> None:
+    cfg = _base_cfg()
+    monkeypatch.setattr("ese.doctor._evaluate_policy_checks", lambda context: [  # type: ignore[assignment]
+        PolicyCheckMessage(
+            policy_key="release-safety",
+            severity="error",
+            message="Release-sensitive scope requires a release-focused role.",
+            hint="Add a release role such as release_manager or release_reviewer before running.",
+        )
+    ])
+
+    guidance = build_doctor_guidance(
+        cfg,
+        ["[policy:release-safety] Release-sensitive scope requires a release-focused role."],
+    )
+
+    assert "Add a release role such as release_manager or release_reviewer before running." in guidance

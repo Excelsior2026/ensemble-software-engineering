@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from ese.cli import app, main
 from ese.config_packs import ConfigPackDefinition, PackRoleDefinition
+from ese.policy_checks import PolicyCheckDefinition
 
 runner = CliRunner()
 
@@ -81,6 +82,35 @@ def test_packs_command_lists_installed_packs(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "release-ops" in result.stdout
+
+
+def test_policies_command_reports_when_none_are_installed() -> None:
+    result = runner.invoke(app, ["policies"])
+
+    assert result.exit_code == 0
+    assert "No external policy checks installed." in result.stdout
+
+
+def test_policies_command_lists_installed_policies(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.cli.discover_policy_checks",
+        lambda: (
+            [
+                PolicyCheckDefinition(
+                    key="release-safety",
+                    title="Release Safety",
+                    summary="Require release-focused roles for rollout scopes.",
+                    check=lambda context: [],
+                )
+            ],
+            [],
+        ),
+    )
+
+    result = runner.invoke(app, ["policies"])
+
+    assert result.exit_code == 0
+    assert "release-safety" in result.stdout
 
 
 def test_no_args_prints_help_when_non_interactive() -> None:

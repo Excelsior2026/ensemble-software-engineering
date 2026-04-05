@@ -98,9 +98,61 @@ roles:
 release_ops = "my_product_pack.pack:load_pack"
 ```
 
+## Policy checks
+
+External policy checks are discovered through the Python entry point group `ese.policy_checks`.
+
+Each entry point should load to either:
+
+- a `PolicyCheckDefinition`
+- a mapping shaped like `PolicyCheckDefinition`
+- a callable that accepts `PolicyCheckContext`
+
+Each policy check exposes:
+
+- `key`
+- `title`
+- `summary`
+- `check`
+
+Each policy result exposes:
+
+- `severity`: `error` or `warning`
+- `message`
+- optional `hint`
+
+Packaging example:
+
+```toml
+[project.entry-points."ese.policy_checks"]
+release_safety = "my_policy_plugin.policy:load_policy"
+```
+
+Example check:
+
+```python
+from ese.policy_checks import POLICY_ERROR, PolicyCheckDefinition
+
+
+def load_policy():
+    return PolicyCheckDefinition(
+        key="release-safety",
+        title="Release Safety",
+        summary="Require a release-focused role for rollout-sensitive scopes.",
+        check=lambda context: [
+            {
+                "severity": POLICY_ERROR,
+                "message": "Release-sensitive scope requires a release-focused role.",
+                "hint": "Add a release role before running.",
+            }
+        ],
+    )
+```
+
 ## Operating model
 
 - Keep ESE releaseable with zero external packs installed.
 - Treat packs as additive integrations, not core dependencies.
+- Treat policy checks as additive governance layers, not hard-coded product logic in ESE core.
 - Put domain tests in the domain repository, not in ESE core.
 - Keep the pack contract stable so vertical repos can upgrade ESE without forking it.

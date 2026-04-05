@@ -21,6 +21,7 @@ from ese.pack_sdk import (
     smoke_test_pack_project,
 )
 from ese.pipeline import CONFIG_SNAPSHOT_NAME, PipelineError, run_pipeline
+from ese.policy_checks import discover_policy_checks
 from ese.pr_review import (
     DEFAULT_MAX_DIFF_CHARS,
     PullRequestReviewError,
@@ -284,6 +285,24 @@ def list_packs():
     typer.echo("Installed config packs:")
     for pack in packs:
         typer.echo(f"  - {pack.key}: {pack.title} - {pack.summary}")
+
+
+@app.command("policies")
+def list_policies():
+    """List installed external doctor policy checks."""
+    checks, failures = discover_policy_checks()
+    if not checks and not failures:
+        typer.echo("No external policy checks installed.")
+        return
+
+    if checks:
+        typer.echo("Installed external policy checks:")
+        for check in checks:
+            typer.echo(f"  - {check.key}: {check.title} - {check.summary}")
+    if failures:
+        typer.echo("Broken external policy checks:")
+        for failure in failures:
+            typer.echo(f"  - {failure.entry_point}: {failure.error}")
 
 
 @pack_app.command("init")

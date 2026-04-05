@@ -15,6 +15,14 @@ from ese.config import (
     resolve_role_provider,
     resolve_scope_text,
 )
+from ese.policy_checks import (
+    POLICY_ERROR,
+    PolicyCheckContext,
+    render_policy_message,
+)
+from ese.policy_checks import (
+    evaluate_policy_checks as _evaluate_policy_checks,
+)
 from ese.provider_runtime import supports_builtin_live
 
 BASELINE_DISALLOW_SAME_MODEL_PAIRS = (
@@ -125,13 +133,14 @@ def _constraint_roles(
 def evaluate_doctor(cfg: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, str]]:
     mode = str(cfg.get("mode") or "ensemble").strip().lower()
     role_names = _collect_role_names(cfg)
+    scope = resolve_scope_text(cfg)
     role_models = {r: resolve_role_model(cfg, r) for r in role_names}
     role_identities = {r: resolve_role_identity(cfg, r) for r in role_names}
     role_providers = {r: resolve_role_provider(cfg, r) for r in role_names}
     constraints = cfg.get("constraints") or {}
     violations: List[str] = []
 
-    if not resolve_scope_text(cfg):
+    if not scope:
         violations.append("No project scope supplied. Set input.scope in the config or pass --scope.")
 
     if not isinstance(constraints, dict):
@@ -224,13 +233,40 @@ def evaluate_doctor(cfg: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, str
                         f"{distinct_minimum} distinct role models, found {distinct_models}",
                     )
 
+    policy_findings = _evaluate_policy_checks(
+        PolicyCheckContext(
+            cfg=cfg,
+            mode=mode,
+            scope=scope,
+            role_names=tuple(role_names),
+            role_models=role_models,
+            role_identities=role_identities,
+            role_providers=role_providers,
+        )
+    )
+    policy_errors = [
+        render_policy_message(finding)
+        for finding in policy_findings
+        if finding.severity == POLICY_ERROR
+    ]
+    if policy_errors:
+        violations.extend(policy_errors)
+
     if violations:
         return False, violations, role_models
 
+    policy_warnings = [
+        render_policy_message(finding)
+        for finding in policy_findings
+        if finding.severity != POLICY_ERROR
+    ]
     if mode == "solo":
-        return True, ["SOLO MODE: degraded independence; lower assurance and higher self-confirmation risk."], role_models
+        return True, [
+            "SOLO MODE: degraded independence; lower assurance and higher self-confirmation risk.",
+            *policy_warnings,
+        ], role_models
 
-    return True, [], role_models
+    return True, policy_warnings, role_models
 
 
 def build_doctor_guidance(cfg: Dict[str, Any], violations: List[str]) -> List[str]:
@@ -269,6 +305,27 @@ def build_doctor_guidance(cfg: Dict[str, Any], violations: List[str]) -> List[st
 
     if provider_name == "custom_api" and not str(provider_cfg.get("base_url") or "").strip():
         guidance.append("custom_api needs provider.base_url or runtime.custom_api.base_url before live runs will work.")
+
+    role_names = _collect_role_names(cfg)
+    policy_findings = _evaluate_policy_checks(
+        PolicyCheckContext(
+            cfg=cfg,
+            mode=str(cfg.get("mode") or "ensemble").strip().lower(),
+            scope=resolve_scope_text(cfg),
+            role_names=tuple(role_names),
+            role_models={r: resolve_role_model(cfg, r) for r in role_names},
+            role_identities={r: resolve_role_identity(cfg, r) for r in role_names},
+            role_providers={r: resolve_role_provider(cfg, r) for r in role_names},
+        )
+    )
+    violation_set = set(violations)
+    for finding in policy_findings:
+        if not finding.hint:
+            continue
+        if render_policy_message(finding) not in violation_set:
+            continue
+        if finding.hint not in guidance:
+            guidance.append(finding.hint)
 
     if not guidance:
         guidance.append("Configuration is structurally valid. Next check provider credentials and artifacts_dir conventions.")

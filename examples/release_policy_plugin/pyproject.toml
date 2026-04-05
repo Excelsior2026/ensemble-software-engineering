@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "release-safety-ese-policy"
+version = "0.1.0"
+description = "External ESE policy check for release-sensitive scopes."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["ese-cli>=1.0.0"]
+
+[project.entry-points."ese.policy_checks"]
+release_safety = "release_policy_plugin.policy:load_policy"
+
+[tool.setuptools.packages.find]
+where = ["src"]

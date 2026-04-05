@@ -264,6 +264,14 @@ ese pack test ../my-product-pack
 
 This repository now carries a portable example external pack in [`examples/release_ops_pack`](examples/release_ops_pack).
 
+## External Policy Checks
+
+Installed policy checks can extend `ese doctor` and every preflighted run path (`ese start`, `ese task`, `ese pr`, `ese rerun`) through the `ese.policy_checks` Python entry point group.
+
+Use `ese policies` to list the installed checks in the current environment.
+
+This repository now carries a sample external policy plugin in [`examples/release_policy_plugin`](examples/release_policy_plugin).
+
 ## Provider/model selection and adapters
 
 Wizard provider presets: `openai`, `anthropic`, `google`, `xai`, `openrouter`, `huggingface`, `local`, `custom_api`.
