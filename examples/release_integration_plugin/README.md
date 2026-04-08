@@ -5,7 +5,7 @@ Example external ESE integration plugin that publishes a portable evidence bundl
 ## Install
 
 ```bash
-pip install ./examples/release_integration_plugin
+pip install .
 ```
 
 ## Inspect

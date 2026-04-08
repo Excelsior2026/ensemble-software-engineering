@@ -170,6 +170,43 @@ def test_manual_evidence_state_is_reported_in_release_simulation(tmp_path: Path)
     assert release["ready_for_release"]
 
 
+def test_release_simulation_summary_does_not_claim_approval_when_blocked(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    run_pipeline(_cfg(), artifacts_dir=str(artifacts_dir))
+    state_path = artifacts_dir / "pipeline_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["evidence_state"] = "approved"
+    state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
+    architect_artifact_path = Path(
+        next(
+            item["artifact"]
+            for item in state["execution"]
+            if item.get("role") == "architect"
+        )
+    )
+    architect_artifact = json.loads(architect_artifact_path.read_text(encoding="utf-8"))
+    architect_artifact["findings"] = [
+        {
+            "severity": "HIGH",
+            "title": "Rollback plan missing",
+            "details": "The rollout has no verified rollback sequence.",
+        }
+    ]
+    architect_artifact_path.write_text(
+        json.dumps(architect_artifact, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = collect_run_report(str(artifacts_dir))
+    release = build_release_simulation(report)
+
+    assert report["evidence_state"] == "approved"
+    assert not release["ready_for_release"]
+    assert "approved for release" not in release["summary"].lower()
+    assert "hold release" in release["summary"].lower()
+
+
 def test_list_recent_runs_discovers_sibling_runs(tmp_path: Path) -> None:
     run_one = tmp_path / "runs" / "20260308-task-run"
     run_two = tmp_path / "runs" / "20260309-pr-review"

@@ -6,19 +6,20 @@ It contributes:
 
 - a release-governance config pack
 - a rollout-safety policy check
+- a release-gate CSV exporter
 - a go-live artifact view
 - a release-evidence integration
 
 ## Install
 
 ```bash
-pip install ./starters/release_governance_starter
+pip install .
 ```
 
 ## Use
 
 ```bash
-ese starter validate ./starters/release_governance_starter
+ese starter validate .
 ese packs
 ese policies
 ese exporters

@@ -8,17 +8,18 @@ It contributes:
 - an architecture-scope policy check
 - a decision brief artifact view
 - a risk-register CSV exporter
+- an architecture decision integration
 
 ## Install
 
 ```bash
-pip install ./starters/architecture_review_starter
+pip install .
 ```
 
 ## Use
 
 ```bash
-ese starter validate ./starters/architecture_review_starter
+ese starter validate .
 ese packs
 ese policies
 ese views

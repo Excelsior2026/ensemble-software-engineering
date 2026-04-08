@@ -399,6 +399,73 @@ def test_publish_command_can_mark_evidence_state(monkeypatch, tmp_path: Path) ->
     assert result.exit_code == 0
     assert state["evidence_state"] == "released"
     assert state["evidence_state_history"][-1]["source"] == "publish"
+    assert state["evidence_state_history"][-1]["reason"] == "Evidence state updated after a successful publish."
+
+
+def test_publish_command_does_not_mark_evidence_state_on_failure(monkeypatch, tmp_path: Path) -> None:
+    from ese.pipeline import run_pipeline
+
+    artifacts_dir = tmp_path / "artifacts"
+    run_pipeline(_base_cfg(), artifacts_dir=str(artifacts_dir))
+    original_state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
+    monkeypatch.setattr(
+        "ese.cli.publish_run_evidence",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("integration failed")),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "publish",
+            "--integration",
+            "filesystem-evidence",
+            "--artifacts-dir",
+            str(artifacts_dir),
+            "--mark-state",
+            "released",
+        ],
+    )
+
+    state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 2
+    assert state.get("evidence_state") == original_state.get("evidence_state")
+    assert state.get("evidence_state_history") == original_state.get("evidence_state_history")
+
+
+def test_publish_command_does_not_mark_evidence_state_on_dry_run(monkeypatch, tmp_path: Path) -> None:
+    from ese.pipeline import run_pipeline
+
+    artifacts_dir = tmp_path / "artifacts"
+    run_pipeline(_base_cfg(), artifacts_dir=str(artifacts_dir))
+    original_state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
+    monkeypatch.setattr(
+        "ese.cli.publish_run_evidence",
+        lambda **kwargs: IntegrationPublishResult(
+            integration_key="filesystem-evidence",
+            status="dry-run",
+            location="/tmp/evidence",
+            outputs=(),
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "publish",
+            "--integration",
+            "filesystem-evidence",
+            "--artifacts-dir",
+            str(artifacts_dir),
+            "--mark-state",
+            "released",
+            "--dry-run",
+        ],
+    )
+
+    state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert state.get("evidence_state") == original_state.get("evidence_state")
+    assert state.get("evidence_state_history") == original_state.get("evidence_state_history")
 
 
 def test_start_command_accepts_scope_override(tmp_path: Path) -> None:

@@ -1071,6 +1071,7 @@ def publish(
 ):
     """Publish run evidence through an installed external integration."""
     parsed_options: dict[str, Any] = {}
+    previous_state: str | None = None
     if options:
         try:
             parsed = json.loads(options)
@@ -1085,15 +1086,7 @@ def publish(
     if mark_state:
         try:
             report = collect_run_report(artifacts_dir)
-            update_pipeline_evidence_state(
-                artifacts_dir,
-                state=mark_state,
-                previous_state=str(report.get("evidence_state") or "").strip() or None,
-                actor=actor,
-                note=note,
-                reason="Evidence state updated during publish.",
-                source="publish",
-            )
+            previous_state = str(report.get("evidence_state") or "").strip() or None
         except (RunReportError, ValueError) as err:
             typer.echo(f"❌ ESE publish failed: {err}")
             raise typer.Exit(code=2) from err
@@ -1109,6 +1102,21 @@ def publish(
     except ValueError as err:
         typer.echo(f"❌ ESE publish failed: {err}")
         raise typer.Exit(code=2) from err
+
+    if mark_state and not dry_run and result.status == "published":
+        try:
+            update_pipeline_evidence_state(
+                artifacts_dir,
+                state=mark_state,
+                previous_state=previous_state,
+                actor=actor,
+                note=note,
+                reason="Evidence state updated after a successful publish.",
+                source="publish",
+            )
+        except ValueError as err:
+            typer.echo(f"❌ ESE publish failed: {err}")
+            raise typer.Exit(code=2) from err
 
     payload = {
         "integration_key": result.integration_key,

@@ -330,16 +330,20 @@ def build_release_simulation(report: dict[str, Any]) -> dict[str, Any]:
         and evidence_state in {"ready", "approved", "released"}
     )
     summary = "Release-ready" if ready else "Hold release until blockers and rollout checks are resolved."
-    if assurance_level == "degraded":
+    if report.get("status") != "completed":
+        summary = "Hold release: the run is not completed."
+    elif report.get("blocker_count", 0) > 0:
+        summary = "Hold release: blockers and rollout checks are still open."
+    elif assurance_level == "degraded":
         summary = "Hold release: degraded assurance runs are not sufficient release evidence."
+    elif evidence_state == "blocked":
+        summary = "Hold release: evidence state is blocked."
     elif evidence_state == "approved":
         summary = "Approved for release."
     elif evidence_state == "released":
         summary = "Release marked as completed."
     elif evidence_state == "draft":
         summary = "Draft evidence: approvals or final review are still pending."
-    elif evidence_state == "blocked":
-        summary = "Hold release: evidence state is blocked."
 
     return {
         "enabled": enabled,
