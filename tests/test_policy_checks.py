@@ -58,6 +58,29 @@ def test_discover_policy_checks_loads_entry_points(monkeypatch) -> None:
     assert checks[0].key == "release-safety"
 
 
+def test_discover_policy_checks_loads_loader_callables(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.policy_checks._policy_check_entry_points",
+        lambda: [
+            _FakeEntryPoint(
+                "release_safety",
+                lambda: PolicyCheckDefinition(
+                    key="release-safety",
+                    title="Release Safety",
+                    summary="Require release-focused roles for rollout scopes.",
+                    check=lambda context: [],
+                ),
+            )
+        ],
+    )
+
+    checks, failures = discover_policy_checks()
+
+    assert failures == []
+    assert len(checks) == 1
+    assert checks[0].key == "release-safety"
+
+
 def test_evaluate_policy_checks_renders_warning_messages(monkeypatch) -> None:
     definition = PolicyCheckDefinition(
         key="release-safety",

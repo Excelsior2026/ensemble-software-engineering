@@ -55,7 +55,8 @@ def test_roles_command_lists_known_role() -> None:
     assert "architect" in result.stdout
 
 
-def test_packs_command_reports_when_no_packs_are_installed() -> None:
+def test_packs_command_reports_when_no_packs_are_installed(monkeypatch) -> None:
+    monkeypatch.setattr("ese.cli.discover_config_packs", lambda: ([], []))
     result = runner.invoke(app, ["packs"])
 
     assert result.exit_code == 0
@@ -92,7 +93,8 @@ def test_packs_command_lists_installed_packs(monkeypatch) -> None:
     assert "release-ops" in result.stdout
 
 
-def test_policies_command_reports_when_none_are_installed() -> None:
+def test_policies_command_reports_when_none_are_installed(monkeypatch) -> None:
+    monkeypatch.setattr("ese.cli.discover_policy_checks", lambda: ([], []))
     result = runner.invoke(app, ["policies"])
 
     assert result.exit_code == 0

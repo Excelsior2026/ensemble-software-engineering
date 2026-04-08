@@ -57,6 +57,32 @@ def test_list_config_packs_loads_external_entry_points(monkeypatch) -> None:
     assert packs[0].roles[0].key == "release_planner"
 
 
+def test_list_config_packs_loads_callable_entry_points(monkeypatch) -> None:
+    payload = {
+        "key": "release-ops",
+        "title": "Release Operations",
+        "summary": "Reusable release-review pack",
+        "preset": "strict",
+        "goal_profile": "high-quality",
+        "roles": [
+            {
+                "key": "release_planner",
+                "responsibility": "Plan the release",
+                "prompt": "Plan the release.",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "ese.config_packs._config_pack_entry_points",
+        lambda: [_FakeEntryPoint(CONFIG_PACK_ENTRY_POINT_GROUP, lambda: payload)],
+    )
+
+    packs = list_config_packs()
+
+    assert len(packs) == 1
+    assert packs[0].key == "release-ops"
+
+
 def test_discover_config_packs_reports_invalid_entry_points(monkeypatch) -> None:
     monkeypatch.setattr(
         "ese.config_packs._config_pack_entry_points",

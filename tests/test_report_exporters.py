@@ -44,6 +44,31 @@ def test_discover_external_report_exporters_loads_entry_points(monkeypatch) -> N
     assert exporters[0].key == "blocker-csv"
 
 
+def test_discover_external_report_exporters_loads_loader_callables(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.report_exporters._report_exporter_entry_points",
+        lambda: [
+            _FakeEntryPoint(
+                "blocker_csv",
+                lambda: ReportExporterDefinition(
+                    key="blocker-csv",
+                    title="Blocker CSV",
+                    summary="CSV export of blocker findings.",
+                    content_type="text/csv; charset=utf-8",
+                    default_filename="ese_blockers.csv",
+                    render=lambda report: "role,severity\narchitect,HIGH\n",
+                ),
+            )
+        ],
+    )
+
+    exporters, failures = discover_external_report_exporters()
+
+    assert failures == []
+    assert len(exporters) == 1
+    assert exporters[0].key == "blocker-csv"
+
+
 def test_render_report_export_supports_external_formats(monkeypatch) -> None:
     monkeypatch.setattr(
         "ese.report_exporters.discover_external_report_exporters",

@@ -47,6 +47,30 @@ def test_discover_artifact_views_loads_entry_points(monkeypatch) -> None:
     assert views[0].key == "release-brief"
 
 
+def test_discover_artifact_views_loads_loader_callables(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.artifact_views._artifact_view_entry_points",
+        lambda: [
+            _FakeEntryPoint(
+                "release_brief",
+                lambda: ArtifactViewDefinition(
+                    key="release-brief",
+                    title="Release Brief",
+                    summary="Generated release brief for dashboard viewing.",
+                    format="md",
+                    render=lambda report: "# Release Brief\n",
+                ),
+            )
+        ],
+    )
+
+    views, failures = discover_artifact_views()
+
+    assert failures == []
+    assert len(views) == 1
+    assert views[0].key == "release-brief"
+
+
 def test_list_available_artifact_view_documents_prefixes_keys(monkeypatch) -> None:
     monkeypatch.setattr(
         "ese.artifact_views.list_artifact_views",

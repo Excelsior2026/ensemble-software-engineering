@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from importlib import metadata
 from typing import Any
 
-from ese.extension_contracts import normalize_contract_version, normalize_non_empty
+from ese.extension_contracts import (
+    maybe_invoke_entrypoint_loader,
+    normalize_contract_version,
+    normalize_non_empty,
+)
 
 CONFIG_PACK_ENTRY_POINT_GROUP = "ese.config_packs"
 CONFIG_PACK_CONTRACT_VERSION = 1
@@ -109,6 +113,7 @@ def normalize_config_pack_definition(value: Any) -> ConfigPackDefinition:
 
 
 def _iter_loaded_pack_definitions(value: Any) -> Iterable[ConfigPackDefinition]:
+    value = maybe_invoke_entrypoint_loader(value)
     if isinstance(value, (ConfigPackDefinition, Mapping)):
         yield normalize_config_pack_definition(value)
         return

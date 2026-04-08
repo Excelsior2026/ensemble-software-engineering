@@ -56,6 +56,29 @@ def test_discover_integrations_loads_entry_points(monkeypatch) -> None:
     assert integrations[0].key == "filesystem-evidence"
 
 
+def test_discover_integrations_loads_loader_callables(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.integrations._integration_entry_points",
+        lambda: [
+            _FakeEntryPoint(
+                "filesystem_evidence",
+                lambda: IntegrationDefinition(
+                    key="filesystem-evidence",
+                    title="Filesystem Evidence",
+                    summary="Write a portable evidence bundle to disk.",
+                    publish=lambda context, request: {"status": "published"},
+                ),
+            )
+        ],
+    )
+
+    integrations, failures = discover_integrations()
+
+    assert failures == []
+    assert len(integrations) == 1
+    assert integrations[0].key == "filesystem-evidence"
+
+
 def test_discover_integrations_reports_invalid_contract_version(monkeypatch) -> None:
     monkeypatch.setattr(
         "ese.integrations._integration_entry_points",

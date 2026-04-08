@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 
@@ -31,3 +32,20 @@ def normalize_contract_version(
             f"expected {expected_version}"
         )
     return value
+
+
+def maybe_invoke_entrypoint_loader(value: Any) -> Any:
+    """Invoke zero-argument loader callables while leaving runtime callables intact."""
+    if not callable(value):
+        return value
+    try:
+        signature = inspect.signature(value)
+    except (TypeError, ValueError):
+        return value
+
+    for parameter in signature.parameters.values():
+        if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            return value
+        if parameter.default is inspect.Parameter.empty:
+            return value
+    return value()

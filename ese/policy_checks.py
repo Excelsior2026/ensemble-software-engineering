@@ -8,6 +8,7 @@ from importlib import metadata
 from typing import Any
 
 from ese.extension_contracts import (
+    maybe_invoke_entrypoint_loader,
     normalize_contract_version,
     normalize_non_empty,
     title_from_key,
@@ -112,6 +113,7 @@ def _iter_policy_messages(value: Any, *, policy_key: str) -> Iterable[PolicyChec
 
 
 def _normalize_policy_check_definition(value: Any, *, fallback_key: str) -> PolicyCheckDefinition:
+    value = maybe_invoke_entrypoint_loader(value)
     if isinstance(value, PolicyCheckDefinition):
         definition = value
     elif isinstance(value, Mapping):
