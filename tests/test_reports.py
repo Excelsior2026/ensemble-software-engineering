@@ -67,6 +67,7 @@ def test_collect_run_report_summarizes_pipeline_outputs(tmp_path: Path) -> None:
     assert report["status"] == "completed"
     assert report["run_id"]
     assert report["assurance_level"] == "standard"
+    assert report["evidence_state"] == "ready"
     assert report["finding_count"] == 0
     assert len(report["roles"]) == 3
     assert report["roles"][0]["role"] == "architect"
@@ -83,6 +84,7 @@ def test_render_status_text_includes_assurance_and_run_id(tmp_path: Path) -> Non
     rendered = render_status_text(report)
 
     assert "Assurance: standard" in rendered
+    assert "Evidence State: ready" in rendered
     assert "Run ID:" in rendered
 
 
@@ -138,8 +140,34 @@ def test_degraded_assurance_makes_release_simulation_not_ready(tmp_path: Path) -
     release = build_release_simulation(report)
 
     assert report["assurance_level"] == "degraded"
+    assert report["evidence_state"] == "draft"
     assert not release["ready_for_release"]
     assert "degraded assurance" in release["summary"].lower()
+
+
+def test_manual_evidence_state_is_reported_in_release_simulation(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    run_pipeline(_cfg(), artifacts_dir=str(artifacts_dir))
+    state_path = artifacts_dir / "pipeline_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["evidence_state"] = "approved"
+    state["evidence_state_history"] = [
+        {
+            "state": "approved",
+            "source": "manual",
+            "actor": "bill",
+            "updated_at": "2026-04-07T10:00:00+00:00",
+        }
+    ]
+    state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
+    report = collect_run_report(str(artifacts_dir))
+    release = build_release_simulation(report)
+
+    assert report["evidence_state"] == "approved"
+    assert report["evidence_state_source"] == "manual"
+    assert release["evidence_state"] == "approved"
+    assert release["ready_for_release"]
 
 
 def test_list_recent_runs_discovers_sibling_runs(tmp_path: Path) -> None:

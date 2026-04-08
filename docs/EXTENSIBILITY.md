@@ -11,6 +11,7 @@ Supported external surfaces all target contract version `1` in this build:
 - `ese.integrations`
 
 Use `ese extensions` to inspect the supported surface names, entry point groups, and contract versions from the installed CLI.
+Use `ese doctor --environment` to validate the installed extension environment before a run starts.
 
 ## Core boundary
 
@@ -247,6 +248,16 @@ filesystem_evidence = "my_integration_plugin.integration:load_integration"
 
 ## Starter repository model
 
+Starter bundles are validated through a manifest named `ese_starter.yaml`. The manifest is the source of truth for a vertical bundle's pack, policy checks, exporters, views, and integrations, even though Python entry points are still required for runtime discovery.
+
+Starter SDK workflow:
+
+```bash
+ese starter init ../my-vertical --key my-vertical
+ese starter validate ../my-vertical
+ese starter test ../my-vertical
+```
+
 Starter repositories should be treated as real installable packages that happen to use ESE as their foundation.
 
 Recommended layout:
@@ -263,9 +274,39 @@ starter/
     views.py
     integration.py
     ese_pack.yaml
+    ese_starter.yaml
     prompts/
       analyst.md
       reviewer.md
+```
+
+Starter manifest shape:
+
+```yaml
+contract_version: 1
+key: release-governance
+title: Release Governance Starter
+summary: Starter vertical repository for release-governance workflows built on top of ESE.
+package_name: release_governance_starter
+pack:
+  key: release-governance
+  manifest: ese_pack.yaml
+policy_checks:
+  - key: release-governance-safety
+    module: release_governance_starter.policy:load_policy
+    file: policy.py
+report_exporters:
+  - key: release-gate-csv
+    module: release_governance_starter.exporters:load_exporter
+    file: exporters.py
+artifact_views:
+  - key: go-live-brief
+    module: release_governance_starter.views:load_view
+    file: views.py
+integrations:
+  - key: release-governance-bundle
+    module: release_governance_starter.integration:load_integration
+    file: integration.py
 ```
 
 Recommended operating model:

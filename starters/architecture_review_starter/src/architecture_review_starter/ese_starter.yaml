@@ -1,0 +1,24 @@
+contract_version: 1
+key: architecture-review
+title: Architecture Review Starter
+summary: Starter vertical repository for architecture-review and migration-decision workflows built on top of ESE.
+package_name: architecture_review_starter
+pack:
+  key: architecture-review
+  manifest: ese_pack.yaml
+policy_checks:
+  - key: architecture-scope
+    module: architecture_review_starter.policy:load_policy
+    file: policy.py
+report_exporters:
+  - key: architecture-risk-csv
+    module: architecture_review_starter.exporters:load_exporter
+    file: exporters.py
+artifact_views:
+  - key: decision-brief
+    module: architecture_review_starter.views:load_view
+    file: views.py
+integrations:
+  - key: architecture-decision-bundle
+    module: architecture_review_starter.integration:load_integration
+    file: integration.py

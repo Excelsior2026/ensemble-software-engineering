@@ -5,7 +5,9 @@ import pytest
 from ese.config_packs import (
     CONFIG_PACK_ENTRY_POINT_GROUP,
     ConfigPackDefinition,
+    ConfigPackLoadFailure,
     PackRoleDefinition,
+    discover_config_packs,
     get_config_pack,
     list_config_packs,
     normalize_config_pack_definition,
@@ -53,6 +55,18 @@ def test_list_config_packs_loads_external_entry_points(monkeypatch) -> None:
     assert packs[0].key == "release-ops"
     assert packs[0].contract_version == 1
     assert packs[0].roles[0].key == "release_planner"
+
+
+def test_discover_config_packs_reports_invalid_entry_points(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.config_packs._config_pack_entry_points",
+        lambda: [_FakeEntryPoint("broken_pack", {"roles": []})],
+    )
+
+    packs, failures = discover_config_packs()
+
+    assert packs == []
+    assert failures == [ConfigPackLoadFailure(entry_point="broken_pack", error="config pack roles must not be empty")]
 
 
 def test_get_config_pack_finds_installed_pack(monkeypatch) -> None:

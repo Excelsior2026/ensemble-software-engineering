@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from ese.pack_sdk import load_pack_definition_from_manifest
 from ese.templates import (
     build_task_config,
     provider_runtime_summary,
@@ -101,3 +102,25 @@ def test_build_task_config_includes_repo_context(tmp_path: Path) -> None:
     assert "app.py" in repo_context["changed_files"]
     assert "notes.md" in repo_context["untracked_files"]
     assert "deployment checklist draft" in cfg["input"]["prompt"]
+
+
+def test_build_task_config_supports_installed_pack(monkeypatch) -> None:
+    pack = load_pack_definition_from_manifest(
+        Path("starters/release_governance_starter/src/release_governance_starter/ese_pack.yaml")
+    )
+    monkeypatch.setattr("ese.templates.get_config_pack", lambda key: pack)
+
+    cfg = build_task_config(
+        scope="Review the staged rollout plan for billing cutover",
+        pack_key="release-governance",
+        provider="openai",
+        execution_mode="demo",
+        artifacts_dir="starter-artifacts",
+    )
+
+    assert cfg["install_profile"]["kind"] == "pack"
+    assert cfg["install_profile"]["pack"] == "release-governance"
+    assert cfg["preset"] == "strict"
+    assert cfg["role_order"] == ["release_planner", "release_gatekeeper"]
+    assert "release_planner" in cfg["roles"]
+    assert cfg["runtime"]["adapter"] == "dry-run"

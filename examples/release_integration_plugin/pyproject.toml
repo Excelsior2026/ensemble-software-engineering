@@ -12,6 +12,7 @@ dependencies = ["ese-cli"]
 
 [project.entry-points."ese.integrations"]
 filesystem_evidence = "release_integration_plugin.integration:load_integration"
+github_pr_evidence = "release_integration_plugin.integration:load_github_integration"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -5,7 +5,7 @@ Example external ESE integration plugin that publishes a portable evidence bundl
 ## Install
 
 ```bash
-pip install -e ./examples/release_integration_plugin
+pip install ./examples/release_integration_plugin
 ```
 
 ## Inspect
@@ -29,3 +29,13 @@ The plugin writes:
 - `evidence_manifest.json`
 - `release_overview.md`
 - optional copied source documents under `documents/`
+
+It also exposes a dry-run GitHub publisher:
+
+```bash
+ese publish \
+  --integration github-pr-evidence \
+  --artifacts-dir artifacts \
+  --target owner/repo#42 \
+  --dry-run
+```

@@ -54,6 +54,23 @@ def test_task_run_kwargs_preserve_repo_context_flags(tmp_path: Path) -> None:
     assert Path(kwargs["artifacts_dir"]).parent == root
 
 
+def test_task_run_kwargs_pass_through_pack_key(tmp_path: Path) -> None:
+    root = tmp_path / "artifacts"
+
+    kwargs = _task_run_kwargs(
+        {
+            "scope": "Review the staged rollout plan",
+            "pack_key": "release-governance",
+            "provider": "openai",
+        },
+        root_artifacts_dir=str(root),
+    )
+
+    assert kwargs["pack_key"] == "release-governance"
+    assert kwargs["template_key"] is None
+    assert Path(kwargs["artifacts_dir"]).parent == root
+
+
 def test_export_report_payload_returns_requested_format(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "artifacts"
     run_pipeline(

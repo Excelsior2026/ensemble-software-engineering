@@ -5,8 +5,9 @@ Validates config and enforces ensemble role separation constraints.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, cast
 
+from ese.artifact_views import discover_artifact_views
 from ese.config import (
     ConfigValidationError,
     load_config,
@@ -15,15 +16,19 @@ from ese.config import (
     resolve_role_provider,
     resolve_scope_text,
 )
+from ese.config_packs import discover_config_packs
+from ese.integrations import discover_integrations
 from ese.policy_checks import (
     POLICY_ERROR,
     PolicyCheckContext,
+    discover_policy_checks,
     render_policy_message,
 )
 from ese.policy_checks import (
     evaluate_policy_checks as _evaluate_policy_checks,
 )
 from ese.provider_runtime import supports_builtin_live
+from ese.report_exporters import discover_external_report_exporters
 
 BASELINE_DISALLOW_SAME_MODEL_PAIRS = (
     ("architect", "implementer"),
@@ -340,6 +345,94 @@ def run_doctor(config_path: str) -> Tuple[bool, List[str], Dict[str, str]]:
         return False, [str(err)], {}
 
     return evaluate_doctor(cfg)
+
+
+def evaluate_doctor_environment() -> tuple[bool, list[str], dict[str, Any]]:
+    packs, pack_failures = discover_config_packs()
+    policies, policy_failures = discover_policy_checks()
+    exporters, exporter_failures = discover_external_report_exporters()
+    views, view_failures = discover_artifact_views()
+    integrations, integration_failures = discover_integrations()
+
+    report = {
+        "config_packs": {
+            "installed": [pack.key for pack in packs],
+            "failures": [
+                {"entry_point": failure.entry_point, "error": failure.error}
+                for failure in pack_failures
+            ],
+        },
+        "policy_checks": {
+            "installed": [check.key for check in policies],
+            "failures": [
+                {"entry_point": failure.entry_point, "error": failure.error}
+                for failure in policy_failures
+            ],
+        },
+        "report_exporters": {
+            "installed": [exporter.key for exporter in exporters],
+            "failures": [
+                {"entry_point": failure.entry_point, "error": failure.error}
+                for failure in exporter_failures
+            ],
+        },
+        "artifact_views": {
+            "installed": [view.key for view in views],
+            "failures": [
+                {"entry_point": failure.entry_point, "error": failure.error}
+                for failure in view_failures
+            ],
+        },
+        "integrations": {
+            "installed": [integration.key for integration in integrations],
+            "failures": [
+                {"entry_point": failure.entry_point, "error": failure.error}
+                for failure in integration_failures
+            ],
+        },
+    }
+
+    violations: list[str] = []
+    for surface_key, label in (
+        ("config_packs", "config pack"),
+        ("policy_checks", "policy check"),
+        ("report_exporters", "report exporter"),
+        ("artifact_views", "artifact view"),
+        ("integrations", "integration"),
+    ):
+        surface = cast(dict[str, Any], report[surface_key])
+        failures = cast(list[dict[str, str]], surface["failures"])
+        for failure in failures:
+            violations.append(
+                f"[environment:{surface_key}] Failed to load {label} "
+                f"'{failure['entry_point']}': {failure['error']}",
+            )
+
+    return not violations, violations, report
+
+
+def render_doctor_environment_text(report: dict[str, Any]) -> str:
+    lines = ["Environment Doctor:"]
+    for surface_key, title in (
+        ("config_packs", "Config Packs"),
+        ("policy_checks", "Policy Checks"),
+        ("report_exporters", "Report Exporters"),
+        ("artifact_views", "Artifact Views"),
+        ("integrations", "Integrations"),
+    ):
+        surface = report.get(surface_key) or {}
+        installed = surface.get("installed") or []
+        failures = surface.get("failures") or []
+        lines.append(
+            f"- {title}: {len(installed)} installed, {len(failures)} broken",
+        )
+        if installed:
+            lines.append(f"  installed: {', '.join(installed)}")
+        for failure in failures:
+            lines.append(
+                f"  broken: {failure.get('entry_point')}: {failure.get('error')}",
+            )
+    return "\n".join(lines)
 
 
 def _baseline_pairs() -> list[tuple[str, str]]:

@@ -19,8 +19,14 @@ release_governance_safety = "release_governance_starter.policy:load_policy"
 [project.entry-points."ese.artifact_views"]
 go_live_brief = "release_governance_starter.views:load_view"
 
+[project.entry-points."ese.report_exporters"]
+release_gate_csv = "release_governance_starter.exporters:load_exporter"
+
 [project.entry-points."ese.integrations"]
 release_governance_bundle = "release_governance_starter.integration:load_integration"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"release_governance_starter" = ["ese_pack.yaml", "ese_starter.yaml", "prompts/*.md"]

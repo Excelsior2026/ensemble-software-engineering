@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from ese.integrations import (
     INTEGRATION_CONTRACT_VERSION,
@@ -40,6 +43,7 @@ def _manifest_payload(report: dict[str, Any], *, target_dir: Path, options: dict
         "run_id": str(report.get("run_id") or ""),
         "scope": str(report.get("scope") or ""),
         "status": str(report.get("status") or "unknown"),
+        "evidence_state": str(report.get("evidence_state") or "draft"),
         "assurance_level": str(report.get("assurance_level") or "unknown"),
         "blocker_count": len(report.get("blockers", [])),
         "suggested_action_count": len(report.get("suggested_actions", [])),
@@ -57,6 +61,7 @@ def _render_release_overview(report: dict[str, Any]) -> str:
         "",
         f"- Scope: {report.get('scope') or 'No scope recorded.'}",
         f"- Status: {report.get('status') or 'unknown'}",
+        f"- Evidence state: {report.get('evidence_state') or 'draft'}",
         f"- Assurance: {report.get('assurance_level') or 'unknown'}",
         f"- Blockers: {len(blockers)}",
         f"- Suggested actions: {len(report.get('suggested_actions', []))}",
@@ -139,6 +144,93 @@ def _publish_release_evidence(context, request):
     )
 
 
+def _parse_github_target(target: str | None) -> tuple[str, str, str]:
+    clean_target = str(target or "").strip()
+    if "#" not in clean_target:
+        raise ValueError("GitHub integration target must use owner/repo#issue_or_pr_number.")
+    repo_text, issue_number = clean_target.rsplit("#", 1)
+    owner, separator, repo = repo_text.partition("/")
+    if not owner or not separator or not repo or not issue_number.strip().isdigit():
+        raise ValueError("GitHub integration target must use owner/repo#issue_or_pr_number.")
+    return owner.strip(), repo.strip(), issue_number.strip()
+
+
+def _render_github_comment(report: dict[str, Any]) -> str:
+    blockers = report.get("blockers", [])
+    next_steps = report.get("suggested_actions", [])
+    lines = [
+        "## ESE Evidence Summary",
+        "",
+        f"- Run ID: {report.get('run_id') or 'unknown'}",
+        f"- Scope: {report.get('scope') or 'No scope recorded.'}",
+        f"- Status: {report.get('status') or 'unknown'}",
+        f"- Evidence state: {report.get('evidence_state') or 'draft'}",
+        f"- Assurance: {report.get('assurance_level') or 'unknown'}",
+        f"- Blockers: {len(blockers)}",
+    ]
+    if blockers:
+        lines.extend(["", "### Top blockers", ""])
+        for blocker in blockers[:5]:
+            lines.append(f"- {blocker.get('role')}: {blocker.get('title')}")
+    if next_steps:
+        lines.extend(["", "### Suggested next actions", ""])
+        for action in next_steps[:5]:
+            lines.append(f"- {action.get('text')}")
+    return "\n".join(lines) + "\n"
+
+
+def _publish_github_evidence(context, request):
+    owner, repo, issue_number = _parse_github_target(request.target)
+    report = dict(context.report)
+    api_url = str(request.options.get("api_url") or "https://api.github.com").rstrip("/")
+    comment_body = _render_github_comment(report)
+    location = f"github://{owner}/{repo}#{issue_number}"
+
+    if request.dry_run:
+        return IntegrationPublishResult(
+            integration_key="github-pr-evidence",
+            status=PUBLISH_STATUS_DRY_RUN,
+            location=location,
+            message="Previewed GitHub evidence comment without publishing.",
+            outputs=(location,),
+        )
+
+    token = os.getenv("GITHUB_TOKEN", "").strip()
+    if not token:
+        raise ValueError("Set GITHUB_TOKEN before publishing GitHub evidence.")
+
+    payload = json.dumps({"body": comment_body}).encode("utf-8")
+    url = f"{api_url}/repos/{owner}/{repo}/issues/{issue_number}/comments"
+    req = urllib_request.Request(
+        url,
+        data=payload,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "ese-github-evidence",
+        },
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(req) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except urllib_error.HTTPError as err:
+        detail = err.read().decode("utf-8", errors="replace")
+        raise ValueError(f"GitHub API returned HTTP {err.code}: {detail}") from err
+    except urllib_error.URLError as err:
+        raise ValueError(f"GitHub API request failed: {err.reason}") from err
+
+    html_url = str(response_payload.get("html_url") or location).strip() or location
+    return IntegrationPublishResult(
+        integration_key="github-pr-evidence",
+        status=PUBLISH_STATUS_PUBLISHED,
+        location=html_url,
+        message=f"Published evidence comment to {owner}/{repo}#{issue_number}.",
+        outputs=(html_url,),
+    )
+
+
 def load_integration():
     """Return the example filesystem evidence integration."""
     return IntegrationDefinition(
@@ -146,5 +238,16 @@ def load_integration():
         title="Filesystem Evidence",
         summary="Publish a portable evidence bundle to a target directory on disk.",
         publish=_publish_release_evidence,
+        contract_version=INTEGRATION_CONTRACT_VERSION,
+    )
+
+
+def load_github_integration():
+    """Return the example GitHub evidence-comment integration."""
+    return IntegrationDefinition(
+        key="github-pr-evidence",
+        title="GitHub PR Evidence",
+        summary="Publish the run summary as a GitHub issue or pull-request comment.",
+        publish=_publish_github_evidence,
         contract_version=INTEGRATION_CONTRACT_VERSION,
     )

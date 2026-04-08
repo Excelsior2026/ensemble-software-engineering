@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ese.config import ConfigValidationError, validate_config, write_config
+from ese.config_packs import ConfigPackDefinition, get_config_pack
 from ese.framework_defaults import (
     COMMON_MODELS_BY_PROVIDER,
     GOAL_DEFAULT_ROLES,
@@ -159,6 +160,28 @@ def resolve_task_template(template_key: str) -> TaskTemplate:
     return template
 
 
+def _resolve_task_pack(pack_key: str) -> ConfigPackDefinition:
+    clean_key = (pack_key or "").strip().lower()
+    if not clean_key:
+        raise ConfigValidationError("Pack key is required when using pack-driven task execution.")
+    try:
+        return get_config_pack(clean_key)
+    except KeyError as err:
+        raise ConfigValidationError(str(err)) from err
+
+
+def _roles_for_pack(pack: ConfigPackDefinition) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    role_order = [role.key for role in pack.roles]
+    roles_cfg = {
+        role.key: {
+            "temperature": role.temperature,
+            "prompt": role.prompt,
+        }
+        for role in pack.roles
+    }
+    return roles_cfg, role_order
+
+
 def recommended_model_for(provider: str, goal_profile: str) -> str | None:
     return RECOMMENDED_MODEL_BY_PROVIDER_GOAL.get(provider, {}).get(goal_profile)
 
@@ -239,7 +262,8 @@ def resolve_execution_mode(
 def build_task_config(
     *,
     scope: str,
-    template_key: str,
+    template_key: str | None = None,
+    pack_key: str | None = None,
     provider: str = "openai",
     execution_mode: str = AUTO_EXECUTION_MODE,
     artifacts_dir: str = "artifacts",
@@ -259,15 +283,49 @@ def build_task_config(
     if not clean_scope:
         raise ConfigValidationError("Task scope is required.")
 
+    clean_template_key = (template_key or "").strip()
+    clean_pack_key = (pack_key or "").strip()
+    if clean_template_key and clean_pack_key:
+        raise ConfigValidationError("Choose either a task template or an installed pack, not both.")
+
     clean_provider = (provider or "openai").strip().lower()
-    template = resolve_task_template(template_key)
+    pack_definition: ConfigPackDefinition | None = None
+    template: TaskTemplate | None = None
+    if clean_pack_key:
+        pack_definition = _resolve_task_pack(clean_pack_key)
+        preset = pack_definition.preset
+        goal_profile = pack_definition.goal_profile
+        roles_cfg, role_order = _roles_for_pack(pack_definition)
+        source_metadata = {
+            "install_profile": {
+                "kind": "pack",
+                "pack": pack_definition.key,
+            },
+            "pack_key": pack_definition.key,
+            "pack_title": pack_definition.title,
+        }
+    else:
+        template = resolve_task_template(clean_template_key or recommend_template_for_scope(scope))
+        preset = template.preset
+        goal_profile = template.goal_profile
+        role_order = list(template.roles)
+        roles_cfg = roles_for_preset(template.preset, list(template.roles))
+        source_metadata = {
+            "install_profile": {
+                "kind": "template",
+                "template": template.key,
+            },
+            "template_key": template.key,
+            "template_title": template.title,
+        }
+
     effective_mode = resolve_execution_mode(
         provider=clean_provider,
         requested_mode=execution_mode,
         runtime_adapter=runtime_adapter,
         base_url=base_url,
     )
-    selected_model = (model or "").strip() or _default_model_for(clean_provider, template.goal_profile)
+    selected_model = (model or "").strip() or _default_model_for(clean_provider, goal_profile)
 
     provider_cfg: dict[str, Any] = {
         "name": (provider_name or clean_provider).strip() if clean_provider == "custom_api" else clean_provider,
@@ -276,16 +334,13 @@ def build_task_config(
     if base_url and clean_provider == "custom_api":
         provider_cfg["base_url"] = base_url.strip()
 
-    roles_cfg = roles_for_preset(template.preset, list(template.roles))
-
     cfg: dict[str, Any] = {
         "version": 1,
-        "mode": template.mode,
-        "template_key": template.key,
-        "template_title": template.title,
+        "mode": template.mode if template is not None else "ensemble",
         "provider": provider_cfg,
-        "preset": template.preset,
+        "preset": preset,
         "roles": roles_cfg,
+        "role_order": role_order,
         "input": {
             "scope": clean_scope,
         },
@@ -294,7 +349,9 @@ def build_task_config(
             "enforce_json": enforce_json,
         },
         "gating": {
-            "fail_on_high": template.fail_on_high if fail_on_high is None else fail_on_high,
+            "fail_on_high": (
+                template.fail_on_high if template is not None and fail_on_high is None else (True if fail_on_high is None else fail_on_high)
+            ),
         },
         "runtime": {
             "timeout_seconds": 60,
@@ -302,6 +359,7 @@ def build_task_config(
             "retry_backoff_seconds": 1.0,
         },
     }
+    cfg.update(source_metadata)
 
     repo_context_payload: dict[str, Any] | None = None
     if repo_path and repo_path.strip():
@@ -318,12 +376,12 @@ def build_task_config(
         cfg["input"]["prompt"] = render_repo_context(repo_context_payload)
         cfg["input"]["repo_context"] = repo_context_payload
 
-    if template.mode == "ensemble":
-        cfg["constraints"] = ensemble_constraints(selected_roles=list(template.roles))
+    if cfg["mode"] == "ensemble":
+        cfg["constraints"] = ensemble_constraints(selected_roles=role_order)
         apply_simple_mode_model_diversity(
             cfg,
             provider=clean_provider,
-            selected_roles=list(template.roles),
+            selected_roles=role_order,
         )
 
     if effective_mode == DEMO_EXECUTION_MODE:
@@ -375,7 +433,8 @@ def build_task_config(
 def run_task_pipeline(
     *,
     scope: str,
-    template_key: str,
+    template_key: str | None = None,
+    pack_key: str | None = None,
     provider: str = "openai",
     execution_mode: str = AUTO_EXECUTION_MODE,
     artifacts_dir: str = "artifacts",
@@ -395,6 +454,7 @@ def run_task_pipeline(
     cfg = build_task_config(
         scope=scope,
         template_key=template_key,
+        pack_key=pack_key,
         provider=provider,
         execution_mode=execution_mode,
         artifacts_dir=artifacts_dir,

@@ -32,6 +32,12 @@ class ConfigPackDefinition:
     contract_version: int = CONFIG_PACK_CONTRACT_VERSION
 
 
+@dataclass(frozen=True)
+class ConfigPackLoadFailure:
+    entry_point: str
+    error: str
+
+
 def _config_pack_entry_points() -> list[Any]:
     discovered = metadata.entry_points()
     if hasattr(discovered, "select"):
@@ -115,16 +121,32 @@ def _iter_loaded_pack_definitions(value: Any) -> Iterable[ConfigPackDefinition]:
     raise TypeError("Config pack providers must return a pack definition or an iterable of definitions")
 
 
-def list_config_packs() -> list[ConfigPackDefinition]:
+def discover_config_packs() -> tuple[list[ConfigPackDefinition], list[ConfigPackLoadFailure]]:
     packs_by_key: dict[str, ConfigPackDefinition] = {}
+    failures: list[ConfigPackLoadFailure] = []
     for entry_point in _config_pack_entry_points():
+        entry_name = normalize_non_empty(
+            getattr(entry_point, "name", "config-pack"),
+            label="entry point name",
+        )
         try:
             loaded = entry_point.load()
             for pack in _iter_loaded_pack_definitions(loaded):
                 packs_by_key.setdefault(pack.key, pack)
-        except Exception:
+        except Exception as err:  # noqa: BLE001
+            failures.append(
+                ConfigPackLoadFailure(
+                    entry_point=entry_name,
+                    error=str(err),
+                )
+            )
             continue
-    return [packs_by_key[key] for key in sorted(packs_by_key)]
+    return [packs_by_key[key] for key in sorted(packs_by_key)], failures
+
+
+def list_config_packs() -> list[ConfigPackDefinition]:
+    packs, _failures = discover_config_packs()
+    return packs
 
 
 def get_config_pack(key: str) -> ConfigPackDefinition:

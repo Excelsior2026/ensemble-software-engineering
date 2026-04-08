@@ -22,5 +22,11 @@ architecture_risk_csv = "architecture_review_starter.exporters:load_exporter"
 [project.entry-points."ese.artifact_views"]
 decision_brief = "architecture_review_starter.views:load_view"
 
+[project.entry-points."ese.integrations"]
+architecture_decision_bundle = "architecture_review_starter.integration:load_integration"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"architecture_review_starter" = ["ese_pack.yaml", "ese_starter.yaml", "prompts/*.md"]

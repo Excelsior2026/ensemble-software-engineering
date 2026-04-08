@@ -12,14 +12,16 @@ It contributes:
 ## Install
 
 ```bash
-pip install -e ./starters/release_governance_starter
+pip install ./starters/release_governance_starter
 ```
 
 ## Use
 
 ```bash
+ese starter validate ./starters/release_governance_starter
 ese packs
 ese policies
+ese exporters
 ese views
 ese integrations
 ```
@@ -28,7 +30,7 @@ Generate a portable starter config:
 
 ```bash
 ese task "Review the staged rollout plan for billing cutover" \
-  --template release-readiness \
+  --pack release-governance \
   --execution-mode demo \
   --artifacts-dir artifacts
 ```
@@ -40,4 +42,13 @@ ese publish \
   --integration release-governance-bundle \
   --artifacts-dir artifacts \
   --target ./release-evidence
+```
+
+Export a gate review CSV:
+
+```bash
+ese export \
+  --artifacts-dir artifacts \
+  --format release-gate-csv \
+  --output-path ./release-evidence/release_gates.csv
 ```

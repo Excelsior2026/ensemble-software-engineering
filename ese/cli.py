@@ -10,9 +10,16 @@ import yaml
 
 from ese.artifact_views import discover_artifact_views
 from ese.config import ConfigValidationError, load_config, write_config
-from ese.config_packs import list_config_packs
+from ese.config_packs import discover_config_packs
 from ese.dashboard import serve_dashboard
-from ese.doctor import build_doctor_guidance, evaluate_doctor, run_doctor
+from ese.doctor import (
+    build_doctor_guidance,
+    evaluate_doctor,
+    evaluate_doctor_environment,
+    render_doctor_environment_text,
+    run_doctor,
+)
+from ese.evidence_state import update_pipeline_evidence_state
 from ese.extensions import list_extension_surfaces
 from ese.feedback import record_feedback as persist_feedback
 from ese.init_wizard import ROLE_DESCRIPTIONS, run_wizard
@@ -44,6 +51,12 @@ from ese.reports import (
     render_report_text,
     render_status_text,
 )
+from ese.starter_sdk import (
+    StarterProjectError,
+    describe_starter_project,
+    scaffold_starter_project,
+    smoke_test_starter_project,
+)
 from ese.templates import (
     AUTO_EXECUTION_MODE,
     build_task_config,
@@ -54,7 +67,9 @@ from ese.templates import (
 
 app = typer.Typer(help="Ensemble Software Engineering (ESE) CLI")
 pack_app = typer.Typer(help="Scaffold and validate external ESE config packs")
+starter_app = typer.Typer(help="Scaffold and validate external ESE starter bundles")
 app.add_typer(pack_app, name="pack")
+app.add_typer(starter_app, name="starter")
 
 
 def _launch_dashboard(
@@ -283,14 +298,19 @@ def list_roles():
 @app.command("packs")
 def list_packs():
     """List installed config packs discovered outside the ESE core package."""
-    packs = list_config_packs()
-    if not packs:
+    packs, failures = discover_config_packs()
+    if not packs and not failures:
         typer.echo("No config packs installed.")
         return
 
-    typer.echo("Installed config packs:")
-    for pack in packs:
-        typer.echo(f"  - {pack.key}: {pack.title} - {pack.summary}")
+    if packs:
+        typer.echo("Installed config packs:")
+        for pack in packs:
+            typer.echo(f"  - {pack.key}: {pack.title} - {pack.summary}")
+    if failures:
+        typer.echo("Broken config packs:")
+        for failure in failures:
+            typer.echo(f"  - {failure.entry_point}: {failure.error}")
 
 
 @app.command("policies")
@@ -472,10 +492,123 @@ def pack_test(
     typer.echo(f"Manifest: {report['manifest_path']}")
 
 
+@starter_app.command("init")
+def starter_init(
+    path: str = typer.Argument(..., help="Target directory for the external starter bundle"),
+    key: str = typer.Option("", help="Stable starter key. Defaults from the directory name."),
+    title: str | None = typer.Option(None, help="Human-friendly starter title"),
+    summary: str | None = typer.Option(None, help="One-line description for the starter"),
+    package_name: str | None = typer.Option(None, "--package", help="Python package name for the generated scaffold"),
+    preset: str = typer.Option("strict", help="Framework preset used by the starter pack"),
+    goal_profile: str | None = typer.Option(None, help="Goal profile override. Defaults to high-quality."),
+    force: bool = typer.Option(False, "--force", help="Allow writing into a non-empty target directory"),
+):
+    """Scaffold a portable external ESE starter bundle."""
+    target = Path(path).expanduser()
+    try:
+        project = scaffold_starter_project(
+            target,
+            starter_key=(key or "").strip() or target.name,
+            title=title,
+            summary=summary,
+            package_name=package_name,
+            preset=preset,
+            goal_profile=goal_profile,
+            force=force,
+        )
+    except StarterProjectError as err:
+        typer.echo(f"❌ ESE starter init failed: {err}")
+        raise typer.Exit(code=2) from err
+
+    typer.echo(
+        "✅ Scaffolded external starter bundle "
+        f"'{project.key}' at {target.resolve()} using contract v{project.contract_version}."
+    )
+
+
+@starter_app.command("validate")
+def starter_validate(
+    path: str = typer.Argument(".", help="Starter project directory or ese_starter.yaml manifest"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable validation metadata"),
+):
+    """Validate an external ESE starter bundle manifest and referenced extension files."""
+    try:
+        report = describe_starter_project(path)
+    except StarterProjectError as err:
+        typer.echo(f"❌ ESE starter validate failed: {err}")
+        raise typer.Exit(code=2) from err
+
+    if json_output:
+        typer.echo(json.dumps(report, indent=2))
+        return
+
+    typer.echo(
+        "✅ Starter valid: "
+        f"{report['starter_key']} (contract v{report['contract_version']})"
+    )
+    typer.echo(f"Manifest: {report['manifest_path']}")
+
+
+@starter_app.command("test")
+def starter_test(
+    path: str = typer.Argument(".", help="Starter project directory or ese_starter.yaml manifest"),
+    provider: str = typer.Option("openai", help="Provider preset for the starter pack smoke test"),
+    model: str | None = typer.Option(None, help="Optional model override for the starter pack smoke test"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable smoke-test metadata"),
+):
+    """Load a starter bundle and smoke-test its pack plus extension loaders."""
+    try:
+        report = smoke_test_starter_project(path, provider=provider, model=model)
+    except StarterProjectError as err:
+        typer.echo(f"❌ ESE starter test failed: {err}")
+        raise typer.Exit(code=2) from err
+
+    if json_output:
+        typer.echo(json.dumps(report, indent=2))
+        return
+
+    typer.echo(
+        "✅ Starter smoke test passed: "
+        f"{report['starter_key']} via {report['provider']} / {report['model']}"
+    )
+    typer.echo(f"Manifest: {report['manifest_path']}")
+
+
 @app.command()
-def doctor(config: str = typer.Option("ese.config.yaml", help="Path to ESE config")):
+def doctor(
+    config: str = typer.Option("ese.config.yaml", help="Path to ESE config"),
+    environment: bool = typer.Option(False, "--environment", help="Validate installed extension environment instead of a config file"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable doctor output"),
+):
     """Validate configuration and enforce ensemble constraints."""
+    if environment:
+        ok, violations, report = evaluate_doctor_environment()
+        if json_output:
+            payload = dict(report)
+            payload["ok"] = ok
+            payload["violations"] = violations
+            typer.echo(json.dumps(payload, indent=2))
+        else:
+            typer.echo(render_doctor_environment_text(report))
+        if not ok:
+            raise typer.Exit(code=2)
+        return
+
     ok, violations, role_models = run_doctor(config_path=config)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "ok": ok,
+                    "violations": violations,
+                    "role_models": role_models,
+                },
+                indent=2,
+            )
+        )
+        if not ok:
+            raise typer.Exit(code=2)
+        return
 
     typer.echo("Role model assignments:")
     for role, model in role_models.items():
@@ -575,6 +708,7 @@ def templates(json_output: bool = typer.Option(False, "--json", help="Emit templ
 def task(
     scope: str = typer.Argument(..., help="Project scope or task to run"),
     template: str = typer.Option("", help="Opinionated task template (defaults from scope if omitted)"),
+    pack: str = typer.Option("", "--pack", help="Installed config pack key for pack-driven task runs"),
     provider: str = typer.Option("openai", help="Provider preset"),
     execution_mode: str = typer.Option(AUTO_EXECUTION_MODE, help="auto, demo, or live"),
     artifacts_dir: str = typer.Option("artifacts", help="Directory for run artifacts"),
@@ -592,11 +726,13 @@ def task(
     quiet: bool = typer.Option(False, "--quiet", help="Suppress preflight and follow-up chatter"),
 ):
     """Run ESE from a task description without hand-authoring config first."""
-    chosen_template = (template or "").strip() or recommend_template_for_scope(scope)
+    chosen_template = (template or "").strip()
+    chosen_pack = (pack or "").strip()
     try:
         cfg = build_task_config(
             scope=scope,
-            template_key=chosen_template,
+            template_key=chosen_template or None,
+            pack_key=chosen_pack or None,
             provider=provider,
             execution_mode=execution_mode,
             artifacts_dir=artifacts_dir,
@@ -616,6 +752,11 @@ def task(
             write_config(write_config_path, cfg)
         effective_artifacts_dir = _effective_artifacts_dir(cfg, artifacts_dir)
         config_snapshot_path = str(Path(effective_artifacts_dir) / CONFIG_SNAPSHOT_NAME)
+        install_profile = cfg.get("install_profile") or {}
+        if install_profile.get("kind") == "pack":
+            source_label = f"pack '{install_profile.get('pack')}'"
+        else:
+            source_label = f"template '{cfg.get('template_key', recommend_template_for_scope(scope))}'"
         _run_with_policy(
             kind="task",
             cfg=cfg,
@@ -624,7 +765,7 @@ def task(
             failure_label="ESE task failed",
             execute=lambda: run_pipeline(cfg=cfg, artifacts_dir=effective_artifacts_dir),
             success_message=lambda summary_path: (
-                f"✅ Task run completed using template '{chosen_template}' via "
+                f"✅ Task run completed using {source_label} via "
                 f"{str((cfg.get('runtime') or {}).get('adapter') or 'dry-run')}. "
                 f"Summary: {summary_path} Config: {config_snapshot_path}"
             ),
@@ -724,6 +865,68 @@ def status(
         return
 
     typer.echo(render_status_text(report))
+
+
+@app.command("evidence")
+def evidence(
+    artifacts_dir: str = typer.Option("artifacts", help="Directory containing run artifacts"),
+    set_state: str | None = typer.Option(None, "--set-state", help="Persist a manual evidence state for the run"),
+    actor: str | None = typer.Option(None, help="Optional operator or approver name recorded with a state change"),
+    note: str | None = typer.Option(None, help="Optional note recorded with a state change"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable evidence state data"),
+):
+    """Inspect or update the current run evidence state."""
+    try:
+        previous_report = collect_run_report(artifacts_dir)
+    except RunReportError as err:
+        typer.echo(f"❌ ESE evidence failed: {err}")
+        raise typer.Exit(code=2) from err
+
+    if set_state:
+        try:
+            update_pipeline_evidence_state(
+                artifacts_dir,
+                state=set_state,
+                previous_state=str(previous_report.get("evidence_state") or "").strip() or None,
+                actor=actor,
+                note=note,
+                reason="Manual evidence state update.",
+                source="manual",
+            )
+        except ValueError as err:
+            typer.echo(f"❌ ESE evidence failed: {err}")
+            raise typer.Exit(code=2) from err
+
+    try:
+        report = collect_run_report(artifacts_dir)
+    except RunReportError as err:
+        typer.echo(f"❌ ESE evidence failed: {err}")
+        raise typer.Exit(code=2) from err
+
+    payload = {
+        "artifacts_dir": report.get("artifacts_dir"),
+        "status": report.get("status"),
+        "assurance_level": report.get("assurance_level"),
+        "evidence_state": report.get("evidence_state"),
+        "evidence_state_source": report.get("evidence_state_source"),
+        "evidence_state_reason": report.get("evidence_state_reason"),
+        "history": report.get("evidence_state_history", []),
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    typer.echo(f"Evidence state: {payload['evidence_state']}")
+    typer.echo(f"Source: {payload['evidence_state_source']}")
+    typer.echo(f"Reason: {payload['evidence_state_reason']}")
+    for entry in payload["history"]:
+        updated_at = str(entry.get("updated_at") or "unknown")
+        detail = f"{updated_at}: {entry.get('state')}"
+        if entry.get("actor"):
+            detail += f" by {entry['actor']}"
+        if entry.get("note"):
+            detail += f" ({entry['note']})"
+        typer.echo(f"History: {detail}")
     snapshot = report.get("config_snapshot")
     if snapshot:
         typer.echo(f"Config snapshot: {snapshot}")
@@ -836,6 +1039,9 @@ def publish(
     artifacts_dir: str = typer.Option("artifacts", help="Directory containing run artifacts"),
     target: str | None = typer.Option(None, help="Optional integration-specific target, such as a path or channel"),
     options: str | None = typer.Option(None, help="Optional JSON object of integration-specific publish options"),
+    mark_state: str | None = typer.Option(None, "--mark-state", help="Optional evidence state to persist before publishing"),
+    actor: str | None = typer.Option(None, help="Optional operator or approver name recorded with --mark-state"),
+    note: str | None = typer.Option(None, help="Optional note recorded with --mark-state"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview the publish request without side effects"),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable publish metadata"),
 ):
@@ -851,6 +1057,22 @@ def publish(
             typer.echo("❌ ESE publish failed: options must decode to a JSON object.")
             raise typer.Exit(code=2)
         parsed_options = parsed
+
+    if mark_state:
+        try:
+            report = collect_run_report(artifacts_dir)
+            update_pipeline_evidence_state(
+                artifacts_dir,
+                state=mark_state,
+                previous_state=str(report.get("evidence_state") or "").strip() or None,
+                actor=actor,
+                note=note,
+                reason="Evidence state updated during publish.",
+                source="publish",
+            )
+        except (RunReportError, ValueError) as err:
+            typer.echo(f"❌ ESE publish failed: {err}")
+            raise typer.Exit(code=2) from err
 
     try:
         result = publish_run_evidence(

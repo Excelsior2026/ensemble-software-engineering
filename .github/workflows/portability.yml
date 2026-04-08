@@ -24,18 +24,37 @@ jobs:
       - name: Sync project
         run: uv sync --locked --extra dev
 
-      - name: Install external examples and starters
+      - name: Build distributable wheels
         run: |
-          uv pip install --python .venv/bin/python \
-            -e examples/release_ops_pack \
-            -e examples/release_policy_plugin \
-            -e examples/release_reporting_plugin \
-            -e examples/release_integration_plugin \
-            -e starters/release_governance_starter \
-            -e starters/architecture_review_starter
+          mkdir -p built-wheels/core
+          mkdir -p built-wheels/release_ops_pack
+          mkdir -p built-wheels/release_policy_plugin
+          mkdir -p built-wheels/release_reporting_plugin
+          mkdir -p built-wheels/release_integration_plugin
+          mkdir -p built-wheels/release_governance_starter
+          mkdir -p built-wheels/architecture_review_starter
+          .venv/bin/python -m pip wheel --no-deps --wheel-dir built-wheels/core .
+          .venv/bin/python -m pip wheel --no-deps --wheel-dir built-wheels/release_ops_pack examples/release_ops_pack
+          .venv/bin/python -m pip wheel --no-deps --wheel-dir built-wheels/release_policy_plugin examples/release_policy_plugin
+          .venv/bin/python -m pip wheel --no-deps --wheel-dir built-wheels/release_reporting_plugin examples/release_reporting_plugin
+          .venv/bin/python -m pip wheel --no-deps --wheel-dir built-wheels/release_integration_plugin examples/release_integration_plugin
+          .venv/bin/python -m pip wheel --no-deps --wheel-dir built-wheels/release_governance_starter starters/release_governance_starter
+          .venv/bin/python -m pip wheel --no-deps --wheel-dir built-wheels/architecture_review_starter starters/architecture_review_starter
+
+      - name: Install built wheels for ESE and external examples/starters
+        run: |
+          .venv/bin/python -m pip install --force-reinstall \
+            built-wheels/core/*.whl \
+            built-wheels/release_ops_pack/*.whl \
+            built-wheels/release_policy_plugin/*.whl \
+            built-wheels/release_reporting_plugin/*.whl \
+            built-wheels/release_integration_plugin/*.whl \
+            built-wheels/release_governance_starter/*.whl \
+            built-wheels/architecture_review_starter/*.whl
 
       - name: Inspect extension surfaces
         run: |
+          uv run ese doctor --environment
           uv run ese extensions
           uv run ese packs
           uv run ese policies
@@ -47,27 +66,41 @@ jobs:
         run: |
           uv run ese pack validate examples/release_ops_pack
           uv run ese pack test examples/release_ops_pack
+          uv run ese starter validate starters/release_governance_starter
+          uv run ese starter test starters/release_governance_starter
           uv run ese pack validate starters/release_governance_starter
           uv run ese pack test starters/release_governance_starter
+          uv run ese starter validate starters/architecture_review_starter
+          uv run ese starter test starters/architecture_review_starter
           uv run ese pack validate starters/architecture_review_starter
           uv run ese pack test starters/architecture_review_starter
 
       - name: Execute demo task and publish artifacts
         run: |
           uv run ese task "Review the staged rollout plan for billing cutover" \
-            --template release-readiness \
+            --pack release-governance \
             --execution-mode demo \
             --artifacts-dir portability-artifacts
 
-          uv run ese export \
-            --artifacts-dir portability-artifacts \
-            --format blocker-csv \
-            --output-path portability-artifacts/blockers.csv
+          uv run ese task "Review the service-boundary changes for the billing migration" \
+            --pack architecture-review \
+            --execution-mode demo \
+            --artifacts-dir portability-architecture-artifacts
 
           uv run ese export \
             --artifacts-dir portability-artifacts \
+            --format release-gate-csv \
+            --output-path portability-artifacts/release_gates.csv
+
+          uv run ese export \
+            --artifacts-dir portability-architecture-artifacts \
+            --format blocker-csv \
+            --output-path portability-architecture-artifacts/blockers.csv
+
+          uv run ese export \
+            --artifacts-dir portability-architecture-artifacts \
             --format architecture-risk-csv \
-            --output-path portability-artifacts/architecture_risks.csv
+            --output-path portability-architecture-artifacts/architecture_risks.csv
 
           uv run ese publish \
             --integration filesystem-evidence \
@@ -80,12 +113,27 @@ jobs:
             --artifacts-dir portability-artifacts \
             --target portability-release-governance
 
+          uv run ese publish \
+            --integration architecture-decision-bundle \
+            --artifacts-dir portability-architecture-artifacts \
+            --target portability-architecture-bundle
+
+          uv run ese publish \
+            --integration github-pr-evidence \
+            --artifacts-dir portability-artifacts \
+            --target openai/ese#1 \
+            --dry-run
+
       - name: Assert published outputs exist
         run: |
           test -f portability-artifacts/ese_summary.md
-          test -f portability-artifacts/blockers.csv
-          test -f portability-artifacts/architecture_risks.csv
+          test -f portability-architecture-artifacts/ese_summary.md
+          test -f portability-artifacts/release_gates.csv
+          test -f portability-architecture-artifacts/blockers.csv
+          test -f portability-architecture-artifacts/architecture_risks.csv
           test -f portability-artifacts/portability-published/evidence_manifest.json
           test -f portability-artifacts/portability-published/release_overview.md
           test -f portability-artifacts/portability-release-governance/approval_packet.json
           test -f portability-artifacts/portability-release-governance/go_live_summary.md
+          test -f portability-architecture-artifacts/portability-architecture-bundle/decision_packet.json
+          test -f portability-architecture-artifacts/portability-architecture-bundle/decision_brief.md

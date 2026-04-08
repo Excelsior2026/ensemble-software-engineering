@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import yaml
 
-from ese.doctor import build_doctor_guidance, evaluate_doctor, run_doctor
+from ese.config_packs import ConfigPackLoadFailure
+from ese.doctor import (
+    build_doctor_guidance,
+    evaluate_doctor,
+    evaluate_doctor_environment,
+    render_doctor_environment_text,
+    run_doctor,
+)
 from ese.policy_checks import POLICY_WARNING, PolicyCheckDefinition, PolicyCheckMessage
 
 
@@ -225,3 +232,21 @@ def test_doctor_guidance_includes_external_policy_hints(monkeypatch) -> None:
     )
 
     assert "Add a release role such as release_manager or release_reviewer before running." in guidance
+
+
+def test_doctor_environment_reports_broken_extensions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.doctor.discover_config_packs",
+        lambda: ([], [ConfigPackLoadFailure(entry_point="broken_pack", error="missing manifest")]),
+    )
+    monkeypatch.setattr("ese.doctor.discover_policy_checks", lambda: ([], []))
+    monkeypatch.setattr("ese.doctor.discover_external_report_exporters", lambda: ([], []))
+    monkeypatch.setattr("ese.doctor.discover_artifact_views", lambda: ([], []))
+    monkeypatch.setattr("ese.doctor.discover_integrations", lambda: ([], []))
+
+    ok, violations, report = evaluate_doctor_environment()
+
+    assert not ok
+    assert "[environment:config_packs] Failed to load config pack 'broken_pack': missing manifest" in violations
+    assert report["config_packs"]["failures"][0]["entry_point"] == "broken_pack"
+    assert "Config Packs: 0 installed, 1 broken" in render_doctor_environment_text(report)

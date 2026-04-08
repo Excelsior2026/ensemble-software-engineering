@@ -1,0 +1,24 @@
+contract_version: 1
+key: release-governance
+title: Release Governance Starter
+summary: Starter vertical repository for release-governance workflows built on top of ESE.
+package_name: release_governance_starter
+pack:
+  key: release-governance
+  manifest: ese_pack.yaml
+policy_checks:
+  - key: release-governance-safety
+    module: release_governance_starter.policy:load_policy
+    file: policy.py
+report_exporters:
+  - key: release-gate-csv
+    module: release_governance_starter.exporters:load_exporter
+    file: exporters.py
+artifact_views:
+  - key: go-live-brief
+    module: release_governance_starter.views:load_view
+    file: views.py
+integrations:
+  - key: release-governance-bundle
+    module: release_governance_starter.integration:load_integration
+    file: integration.py

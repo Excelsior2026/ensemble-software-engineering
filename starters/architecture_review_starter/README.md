@@ -12,23 +12,39 @@ It contributes:
 ## Install
 
 ```bash
-pip install -e ./starters/architecture_review_starter
+pip install ./starters/architecture_review_starter
 ```
 
 ## Use
 
 ```bash
+ese starter validate ./starters/architecture_review_starter
 ese packs
 ese policies
 ese views
 ese exporters
+ese integrations
 ```
 
 Run an architecture review workflow:
 
 ```bash
 ese task "Review the service-boundary changes for the billing migration" \
-  --template architecture-deep-dive \
+  --pack architecture-review \
   --execution-mode demo \
   --artifacts-dir artifacts
+```
+
+Export a risk register and publish a portable decision packet:
+
+```bash
+ese export \
+  --artifacts-dir artifacts \
+  --format architecture-risk-csv \
+  --output-path ./architecture-evidence/architecture_risks.csv
+
+ese publish \
+  --integration architecture-decision-bundle \
+  --artifacts-dir artifacts \
+  --target ./architecture-evidence
 ```

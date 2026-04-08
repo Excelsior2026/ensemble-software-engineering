@@ -229,6 +229,7 @@ Each run now writes lineage and assurance metadata into `pipeline_state.json` an
 
 Use `ese roles` to print the built-in starter role examples for framework installs.
 Use `ese packs` to list installed config packs discovered outside the ESE core package.
+Use `ese doctor --environment` to validate the installed extension environment before a run.
 
 - `architect`: System design, decomposition, and interface contracts.
 - `implementer`: Code changes and refactors.
@@ -295,14 +296,30 @@ Use:
 
 This repository now carries a sample integration plugin in [`examples/release_integration_plugin`](examples/release_integration_plugin).
 
-## Starter Repos
+## Starter Bundles
 
-This repository now includes two installable starter verticals that treat ESE as the substrate rather than the application:
+This repository now includes two installable reference starters that treat ESE as the substrate rather than the application:
 
 - [`starters/release_governance_starter`](starters/release_governance_starter): release-readiness, go-live review, and evidence publication
 - [`starters/architecture_review_starter`](starters/architecture_review_starter): architecture review, migration risk assessment, and decision briefing
 
-These are meant to be copied into sibling repositories and extended, not folded back into ESE core.
+These are reference bundles, not long-term products that should stay inside ESE core.
+
+Recommended operating model:
+
+- keep ESE core generic
+- create a separate repository for each vertical product
+- copy or fork a reference starter into that repo
+- keep domain prompts, policies, exporters, views, and integrations there
+
+Starter bundle lifecycle:
+
+```bash
+ese starter validate ./starters/release_governance_starter
+ese starter test ./starters/release_governance_starter
+ese pack validate ./starters/release_governance_starter
+ese pack test ./starters/release_governance_starter
+```
 
 ## Portability CI
 
@@ -317,6 +334,8 @@ That workflow installs:
 It then proves:
 
 - extension discovery
+- environment doctor validation
+- starter bundle validation and smoke testing
 - pack validation and smoke testing
 - task-first execution in demo mode
 - plugin-defined export formats
@@ -390,6 +409,22 @@ runtime:
   retry_backoff_seconds: 1.0
   custom_api:
     base_url: https://gateway.example/v1
+```
+
+## Evidence State
+
+Every collected report now carries an `evidence_state`:
+
+- derived automatically as `draft`, `ready`, or `blocked`
+- overridable to `approved` or `released` by an operator
+- propagated into exporters and integrations for release or approval workflows
+
+Inspect or update it with:
+
+```bash
+ese evidence --artifacts-dir artifacts
+ese evidence --artifacts-dir artifacts --set-state approved --actor "Release Manager"
+ese publish --integration filesystem-evidence --artifacts-dir artifacts --mark-state released
 ```
 
 ## Contract documentation

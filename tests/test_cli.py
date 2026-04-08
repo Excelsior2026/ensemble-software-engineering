@@ -10,6 +10,7 @@ from ese.artifact_views import ArtifactViewDefinition
 from ese.cli import app, main
 from ese.config_packs import ConfigPackDefinition, PackRoleDefinition
 from ese.integrations import IntegrationDefinition, IntegrationPublishResult
+from ese.pack_sdk import load_pack_definition_from_manifest
 from ese.policy_checks import PolicyCheckDefinition
 from ese.report_exporters import ReportExporterDefinition
 
@@ -62,23 +63,26 @@ def test_packs_command_reports_when_no_packs_are_installed() -> None:
 
 def test_packs_command_lists_installed_packs(monkeypatch) -> None:
     monkeypatch.setattr(
-        "ese.cli.list_config_packs",
-        lambda: [
-            ConfigPackDefinition(
-                key="release-ops",
-                title="Release Operations",
-                summary="Reusable release-review pack",
-                preset="strict",
-                goal_profile="high-quality",
-                roles=(
-                    PackRoleDefinition(
-                        key="release_planner",
-                        responsibility="Plan the release",
-                        prompt="Plan the release.",
+        "ese.cli.discover_config_packs",
+        lambda: (
+            [
+                ConfigPackDefinition(
+                    key="release-ops",
+                    title="Release Operations",
+                    summary="Reusable release-review pack",
+                    preset="strict",
+                    goal_profile="high-quality",
+                    roles=(
+                        PackRoleDefinition(
+                            key="release_planner",
+                            responsibility="Plan the release",
+                            prompt="Plan the release.",
+                        ),
                     ),
-                ),
-            )
-        ],
+                )
+            ],
+            [],
+        ),
     )
 
     result = runner.invoke(app, ["packs"])
@@ -311,6 +315,92 @@ def test_publish_command_supports_external_integrations(monkeypatch) -> None:
     assert "/tmp/evidence/manifest.json" in result.stdout
 
 
+def test_doctor_environment_command_reports_broken_extensions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ese.cli.evaluate_doctor_environment",
+        lambda: (
+            False,
+            ["[environment:config_packs] Failed to load config pack 'broken_pack': missing manifest"],
+            {
+                "config_packs": {"installed": [], "failures": [{"entry_point": "broken_pack", "error": "missing manifest"}]},
+                "policy_checks": {"installed": [], "failures": []},
+                "report_exporters": {"installed": [], "failures": []},
+                "artifact_views": {"installed": [], "failures": []},
+                "integrations": {"installed": [], "failures": []},
+            },
+        ),
+    )
+
+    result = runner.invoke(app, ["doctor", "--environment"])
+
+    assert result.exit_code == 2
+    assert "Config Packs: 0 installed, 1 broken" in result.stdout
+
+
+def test_evidence_command_can_persist_manual_state(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    from ese.pipeline import run_pipeline
+
+    run_pipeline(_base_cfg(), artifacts_dir=str(artifacts_dir))
+
+    result = runner.invoke(
+        app,
+        [
+            "evidence",
+            "--artifacts-dir",
+            str(artifacts_dir),
+            "--set-state",
+            "approved",
+            "--actor",
+            "bill",
+            "--note",
+            "Approved after release review.",
+            "--json",
+        ],
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.exit_code == 0
+    assert payload["evidence_state"] == "approved"
+    assert payload["history"][-1]["actor"] == "bill"
+
+
+def test_publish_command_can_mark_evidence_state(monkeypatch, tmp_path: Path) -> None:
+    from ese.pipeline import run_pipeline
+
+    artifacts_dir = tmp_path / "artifacts"
+    run_pipeline(_base_cfg(), artifacts_dir=str(artifacts_dir))
+    monkeypatch.setattr(
+        "ese.cli.publish_run_evidence",
+        lambda **kwargs: IntegrationPublishResult(
+            integration_key="filesystem-evidence",
+            status="published",
+            location="/tmp/evidence",
+            outputs=(),
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "publish",
+            "--integration",
+            "filesystem-evidence",
+            "--artifacts-dir",
+            str(artifacts_dir),
+            "--mark-state",
+            "released",
+            "--actor",
+            "bill",
+        ],
+    )
+
+    state = json.loads((artifacts_dir / "pipeline_state.json").read_text(encoding="utf-8"))
+    assert result.exit_code == 0
+    assert state["evidence_state"] == "released"
+    assert state["evidence_state_history"][-1]["source"] == "publish"
+
+
 def test_start_command_accepts_scope_override(tmp_path: Path) -> None:
     cfg = _base_cfg()
     cfg.pop("input")
@@ -352,6 +442,30 @@ def test_task_command_runs_template_without_hand_written_config(tmp_path: Path) 
     assert result.exit_code == 0
     assert (artifacts_dir / "ese_summary.md").exists()
     assert "Task run completed" in result.stdout
+
+
+def test_task_command_runs_installed_pack_without_hand_written_config(tmp_path: Path, monkeypatch) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    pack = load_pack_definition_from_manifest(
+        Path("starters/release_governance_starter/src/release_governance_starter/ese_pack.yaml")
+    )
+    monkeypatch.setattr("ese.templates.get_config_pack", lambda key: pack)
+
+    result = runner.invoke(
+        app,
+        [
+            "task",
+            "Review the staged rollout plan for billing cutover",
+            "--pack",
+            "release-governance",
+            "--artifacts-dir",
+            str(artifacts_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (artifacts_dir / "ese_summary.md").exists()
+    assert "pack 'release-governance'" in result.stdout
 
 
 def test_task_command_fails_on_doctor_violations(monkeypatch) -> None:

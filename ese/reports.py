@@ -13,6 +13,11 @@ from ese.artifact_views import (
     list_available_artifact_view_documents,
     render_external_artifact_view,
 )
+from ese.evidence_state import (
+    coerce_evidence_state,
+    derive_evidence_state,
+    normalize_evidence_history,
+)
 from ese.feedback import feedback_summary
 
 SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
@@ -317,18 +322,29 @@ def build_release_simulation(report: dict[str, Any]) -> dict[str, Any]:
     ]
     required_sign_off = [role for role in ("release_manager", "devops_sre", "security_auditor") if role in role_map]
     assurance_level = str(report.get("assurance_level") or "standard").strip().lower()
+    evidence_state = str(report.get("evidence_state") or "draft").strip().lower()
     ready = (
         report.get("blocker_count", 0) == 0
         and report.get("status") == "completed"
         and assurance_level != "degraded"
+        and evidence_state in {"ready", "approved", "released"}
     )
     summary = "Release-ready" if ready else "Hold release until blockers and rollout checks are resolved."
     if assurance_level == "degraded":
         summary = "Hold release: degraded assurance runs are not sufficient release evidence."
+    elif evidence_state == "approved":
+        summary = "Approved for release."
+    elif evidence_state == "released":
+        summary = "Release marked as completed."
+    elif evidence_state == "draft":
+        summary = "Draft evidence: approvals or final review are still pending."
+    elif evidence_state == "blocked":
+        summary = "Hold release: evidence state is blocked."
 
     return {
         "enabled": enabled,
         "status": report.get("status", "unknown"),
+        "evidence_state": evidence_state,
         "ready_for_release": ready,
         "rollout_stages": rollout_stages,
         "rollback_criteria": rollback_criteria,
@@ -649,11 +665,32 @@ def collect_run_report(artifacts_dir: str, *, include_comparison: bool = True) -
     run_id = str(state.get("run_id") or "").strip()
     assurance_level = str(state.get("assurance_level") or "").strip() or "standard"
     recurring_unknowns = _recurring_unknowns(roles)
+    derived_evidence_state, evidence_state_reason = derive_evidence_state(
+        status=str(state.get("status") or "unknown"),
+        blocker_count=len(blockers),
+        assurance_level=assurance_level,
+    )
+    evidence_state = coerce_evidence_state(state.get("evidence_state")) or derived_evidence_state
+    evidence_state_source = "manual" if coerce_evidence_state(state.get("evidence_state")) else "derived"
+    evidence_state_history = normalize_evidence_history(state.get("evidence_state_history"))
+    if not evidence_state_history:
+        evidence_state_history = [
+            {
+                "state": evidence_state,
+                "source": evidence_state_source,
+                "reason": evidence_state_reason,
+                "updated_at": _timestamp_for(state_path),
+            }
+        ]
     report = {
         "artifacts_dir": str(root),
         "state": state,
         "run_id": run_id,
         "assurance_level": assurance_level,
+        "evidence_state": evidence_state,
+        "evidence_state_source": evidence_state_source,
+        "evidence_state_reason": evidence_state_reason,
+        "evidence_state_history": evidence_state_history,
         "parent_run_id": state.get("parent_run_id"),
         "state_contract_version": state.get("state_contract_version"),
         "report_contract_version": state.get("report_contract_version"),
@@ -819,6 +856,7 @@ def render_status_text(report: dict[str, Any]) -> str:
     lines = [
         f"Status: {report.get('status', 'unknown')}",
         f"Assurance: {report.get('assurance_level', 'standard')}",
+        f"Evidence State: {report.get('evidence_state', 'draft')}",
         f"Provider: {report.get('provider', 'unknown')} ({report.get('adapter', 'unknown')})",
         f"Executed roles: {executed}",
         f"Findings: {report.get('finding_count', 0)} ({severity_line})",

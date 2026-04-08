@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from ese.config import ConfigValidationError, load_config
+from ese.config_packs import list_config_packs
 from ese.doctor import evaluate_doctor
 from ese.feedback import record_feedback
 from ese.pipeline import run_pipeline
@@ -218,7 +219,8 @@ def _task_run_kwargs(payload: dict[str, Any], *, root_artifacts_dir: str) -> dic
     )
     return {
         "scope": str(payload.get("scope") or ""),
-        "template_key": str(payload.get("template_key") or "feature-delivery"),
+        "template_key": str(payload.get("template_key")) if payload.get("template_key") else None,
+        "pack_key": str(payload.get("pack_key")) if payload.get("pack_key") else None,
         "provider": str(payload.get("provider") or "openai"),
         "execution_mode": str(payload.get("execution_mode") or "auto"),
         "artifacts_dir": run_artifacts_dir,
@@ -565,7 +567,21 @@ def _dashboard_html(bootstrap: dict[str, Any]) -> str:
 
         <label for="template">Template</label>
         <div class="btn-row" style="margin-bottom:14px;">
+          <select id="task_source" name="task_source">
+            <option value="template">template</option>
+            <option value="pack">installed pack</option>
+          </select>
           <select id="template" name="template"></select>
+        </div>
+
+        <div class="field-group" id="pack-group" data-hidden="true">
+          <label for="pack">Installed Pack</label>
+          <div class="btn-row" style="margin-bottom:14px;">
+            <select id="pack" name="pack"></select>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-bottom:14px;">
           <button id="recommend-template" type="button" class="secondary">Recommend</button>
         </div>
 
@@ -698,6 +714,9 @@ def _dashboard_html(bootstrap: dict[str, Any]) -> str:
     const bootstrap = window.ESE_BOOTSTRAP;
     const form = document.getElementById('run-form');
     const templateSelect = document.getElementById('template');
+    const taskSourceSelect = document.getElementById('task_source');
+    const packSelect = document.getElementById('pack');
+    const packGroup = document.getElementById('pack-group');
     const interfaceMode = document.getElementById('interface_mode');
     const recommendTemplateButton = document.getElementById('recommend-template');
     const artifactsInput = document.getElementById('artifacts_dir');
@@ -758,6 +777,32 @@ def _dashboard_html(bootstrap: dict[str, Any]) -> str:
       }).join('');
     }
 
+    function renderPacks(packs) {
+      if (!packs.length) {
+        taskSourceSelect.value = 'template';
+        taskSourceSelect.disabled = true;
+        taskSourceSelect.innerHTML = '<option value="template">template</option>';
+        packGroup.dataset.hidden = 'true';
+        packSelect.innerHTML = '';
+        return;
+      }
+      taskSourceSelect.disabled = false;
+      taskSourceSelect.innerHTML = `
+        <option value="template">template</option>
+        <option value="pack">installed pack</option>
+      `;
+      packSelect.innerHTML = packs.map((pack) => {
+        return `<option value="${pack.key}">${pack.title}</option>`;
+      }).join('');
+      syncTaskSource();
+    }
+
+    function syncTaskSource() {
+      const source = taskSourceSelect.value || 'template';
+      packGroup.dataset.hidden = source === 'pack' ? 'false' : 'true';
+      recommendTemplateButton.disabled = source === 'pack';
+    }
+
     function applyInterfaceMode() {
       const mode = interfaceMode.value;
       const hideAdvanced = mode === 'beginner';
@@ -766,6 +811,7 @@ def _dashboard_html(bootstrap: dict[str, Any]) -> str:
       });
       prButton.textContent = hideAdvanced ? 'Review PR' : 'Review PR / Diff';
       runButton.textContent = hideAdvanced ? 'Start Task Run' : 'Start Configured Run';
+      syncTaskSource();
     }
 
     function parseBool(value) {
@@ -1227,7 +1273,8 @@ def _dashboard_html(bootstrap: dict[str, Any]) -> str:
 
       const payload = {
         scope,
-        template_key: form.template.value,
+        template_key: taskSourceSelect.value === 'template' ? form.template.value : undefined,
+        pack_key: taskSourceSelect.value === 'pack' ? (form.pack.value || undefined) : undefined,
         provider: form.provider.value,
         execution_mode: form.execution_mode.value,
         model: form.model.value.trim() || undefined,
@@ -1290,9 +1337,12 @@ def _dashboard_html(bootstrap: dict[str, Any]) -> str:
       templateSelect.value = response.template_key;
     });
 
+    taskSourceSelect.addEventListener('change', syncTaskSource);
+
     async function boot() {
       const templates = await request('/api/templates');
       renderTemplates(templates.templates);
+      renderPacks(templates.packs || []);
       applyInterfaceMode();
       await loadReport({ preferLatest: true });
     }
@@ -1327,6 +1377,14 @@ def serve_dashboard(
                 "title": exporter.title,
             }
             for exporter in list_report_exporters()
+        ],
+        "packs": [
+            {
+                "key": pack.key,
+                "title": pack.title,
+                "summary": pack.summary,
+            }
+            for pack in list_config_packs()
         ],
     }
 
@@ -1390,6 +1448,14 @@ def serve_dashboard(
                             "roles": list(template.roles),
                         }
                         for template in list_task_templates()
+                    ],
+                    "packs": [
+                        {
+                            "key": pack.key,
+                            "title": pack.title,
+                            "summary": pack.summary,
+                        }
+                        for pack in list_config_packs()
                     ],
                 }
                 self._send_json(payload)
